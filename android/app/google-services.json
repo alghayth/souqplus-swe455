@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "1003013495207",
+    "project_id": "souqplus-1bb34",
+    "storage_bucket": "souqplus-1bb34.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1003013495207:android:4e9390c2d72567fa3dbe82",
+        "android_client_info": {
+          "package_name": "com.example.souqplus"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1003013495207-h7g3skr1ud4gajrvcmbfniqa2abumdbt.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.souqplus",
+            "certificate_hash": "982093e201498b934d5d1978aeec1f7718150237"
+          }
+        },
+        {
+          "client_id": "1003013495207-c3fitr4pl9gngcoas4l6geubccepuu75.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCFqa1t5Rn7ndtOtjHKoTie7AXX7k4zyV4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1003013495207-c3fitr4pl9gngcoas4l6geubccepuu75.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

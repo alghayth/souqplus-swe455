@@ -1,0 +1,30 @@
+// ignore_for_file: file_names
+
+import 'product.dart';
+
+class Cart {
+  final Product product;
+  final int numOfItem;
+
+  Cart({required this.product, required this.numOfItem});
+
+  double get lineTotal => product.price * numOfItem;
+
+  Cart copyWith({
+    Product? product,
+    int? numOfItem,
+  }) {
+    return Cart(
+      product: product ?? this.product,
+      numOfItem: numOfItem ?? this.numOfItem,
+    );
+  }
+}
+
+// Demo data for our cart
+
+List<Cart> demoCarts = [
+  Cart(product: demoProducts[0], numOfItem: 2),
+  Cart(product: demoProducts[1], numOfItem: 1),
+  Cart(product: demoProducts[3], numOfItem: 1),
+];

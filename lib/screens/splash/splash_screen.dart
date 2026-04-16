@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../constants.dart';
 import '../sign_in/sign_in_screen.dart';
+import '../role/role_selection_screen.dart'; // ✅ ADD THIS
 import 'components/splash_content.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -15,6 +16,7 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen> {
   int currentPage = 0;
+
   List<Map<String, String>> splashData = [
     {
       "text": "Welcome to Souqplus, Let’s shop!",
@@ -25,10 +27,12 @@ class _SplashScreenState extends State<SplashScreen> {
       "image": "assets/images/splash_22.png"
     },
     {
-      "text": "We show the easy verified way to shop. \nJust stay at home with us",
+      "text":
+          "We show the easy verified way to shop. \nJust stay at home with us",
       "image": "assets/images/splash_33.png"
     },
   ];
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -59,6 +63,8 @@ class _SplashScreenState extends State<SplashScreen> {
                   child: Column(
                     children: <Widget>[
                       const Spacer(),
+
+                      // DOTS
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: List.generate(
@@ -77,13 +83,20 @@ class _SplashScreenState extends State<SplashScreen> {
                           ),
                         ),
                       ),
+
                       const Spacer(flex: 3),
+
+                      // ✅ UPDATED BUTTON
                       ElevatedButton(
                         onPressed: () {
-                          Navigator.pushNamed(context, SignInScreen.routeName);
+                          Navigator.pushNamed(
+                            context,
+                            RoleSelectionScreen.routeName,
+                          );
                         },
                         child: const Text("Continue"),
                       ),
+
                       const Spacer(),
                     ],
                   ),

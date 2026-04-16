@@ -25,8 +25,14 @@ import 'package:souqplus/screens/profile/purchase_history_screen.dart';
 import 'package:souqplus/screens/Regitration/registration_screen.dart';
 import 'package:souqplus/screens/search/search_screen.dart';
 import 'package:souqplus/screens/sign_in/sign_in_screen.dart';
+import 'package:souqplus/screens/sign_in/driver_sign_in_screen.dart'; // ✅ DRIVER
 import 'package:souqplus/screens/splash/splash_screen.dart';
 import 'package:souqplus/seller.dart';
+import 'package:souqplus/screens/driver_registration/driver_registration_screen.dart';
+
+// ✅ ROLE SCREEN
+import 'screens/role/role_selection_screen.dart';
+import 'package:souqplus/screens/driver_registration/driver_home_screen.dart';
 
 final Map<String, WidgetBuilder> routes = {
   InitScreen.routeName: (context) {
@@ -34,18 +40,45 @@ final Map<String, WidgetBuilder> routes = {
     final initialIndex = args is int ? args : 0;
     return InitScreen(initialIndex: initialIndex);
   },
+
+
+DriverRegistrationScreen.routeName: (context) =>
+    const DriverRegistrationScreen(),
+  // SPLASH
   SplashScreen.routeName: (context) => const SplashScreen(),
+
+  // ✅ ROLE SELECTION
+  RoleSelectionScreen.routeName: (context) =>
+      const RoleSelectionScreen(),
+
+  // USER LOGIN
   SignInScreen.routeName: (context) => const SignInScreen(),
+
+  // ✅ DRIVER LOGIN
+  DriverSignInScreen.routeName: (context) =>
+      const DriverSignInScreen(),
+
+  // ADMIN (already exists)
   AdminSignInScreen.routeName: (context) => const AdminSignInScreen(),
   AdminDashboardScreen.routeName: (context) => const AdminDashboardScreen(),
   AdminOrdersScreen.routeName: (context) => const AdminOrdersScreen(),
-  AdminCategoriesScreen.routeName: (context) => const AdminCategoriesScreen(),
-  AdminPaymentsScreen.routeName: (context) => const AdminPaymentsScreen(),
+  AdminCategoriesScreen.routeName: (context) =>
+      const AdminCategoriesScreen(),
+  AdminPaymentsScreen.routeName: (context) =>
+      const AdminPaymentsScreen(),
   AdminAlertsScreen.routeName: (context) => const AdminAlertsScreen(),
-  ForgotPasswordScreen.routeName: (context) => const ForgotPasswordScreen(),
-  LoginSuccessScreen.routeName: (context) => const LoginSuccessScreen(),
-  RegistrationScreen.routeName: (context) => const RegistrationScreen(),
-  CompleteProfileScreen.routeName: (context) => const CompleteProfileScreen(),
+
+  // OTHER SCREENS
+  ForgotPasswordScreen.routeName: (context) =>
+      const ForgotPasswordScreen(),
+  LoginSuccessScreen.routeName: (context) =>
+      const LoginSuccessScreen(),
+  RegistrationScreen.routeName: (context) =>
+      const RegistrationScreen(),
+  CompleteProfileScreen.routeName: (context) =>
+      const CompleteProfileScreen(),
+      DriverHomeScreen.routeName: (context) => const DriverHomeScreen(),
+
   OtpScreen.routeName: (context) {
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is Map<String, dynamic>) {
@@ -60,12 +93,15 @@ final Map<String, WidgetBuilder> routes = {
     final email = (args as String? ?? '').trim();
     return OtpScreen(email: email);
   },
+
   HomeScreen.routeName: (context) => const InitScreen(initialIndex: 0),
   "/home": (context) => const HomeScreen(),
+
   ProductsScreen.routeName: (context) => const ProductsScreen(),
   DetailsScreen.routeName: (context) => const DetailsScreen(),
   FavoriteScreen.routeName: (context) => const FavoriteScreen(),
   CartScreen.routeName: (context) => const CartScreen(),
+
   CheckoutScreen.routeName: (context) {
     final args = ModalRoute.of(context)?.settings.arguments;
     List<Cart>? initialItems;
@@ -81,12 +117,19 @@ final Map<String, WidgetBuilder> routes = {
 
     return CheckoutScreen(initialItems: initialItems);
   },
-  SearchScreen.routeName: (context) => const InitScreen(initialIndex: 2),
-  ProfileScreen.routeName: (context) => const InitScreen(initialIndex: 3),
-  NotificationsScreen.routeName: (context) => const NotificationsScreen(),
-  MyAccountScreen.routeName: (context) => const MyAccountScreen(),
+
+  SearchScreen.routeName: (context) =>
+      const InitScreen(initialIndex: 2),
+  ProfileScreen.routeName: (context) =>
+      const InitScreen(initialIndex: 3),
+  NotificationsScreen.routeName: (context) =>
+      const NotificationsScreen(),
+  MyAccountScreen.routeName: (context) =>
+      const MyAccountScreen(),
   PurchaseHistoryScreen.routeName: (context) =>
       const PurchaseHistoryScreen(),
-  PostedProductsScreen.routeName: (context) => const PostedProductsScreen(),
+  PostedProductsScreen.routeName: (context) =>
+      const PostedProductsScreen(),
+
   SellerScreen.routeName: (context) => const SellerScreen(),
 };

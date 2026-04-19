@@ -20,27 +20,20 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
 
   Future<void> _updateField({
     required String orderId,
-    required String field,
     required String value,
   }) async {
     setState(() => _updatingOrderId = orderId);
     try {
       await _adminOrderService.updateOrderField(
         orderId: orderId,
-        field: field,
+        field: 'status',
         value: value,
       );
       if (!mounted) return;
-      final fieldLabel = switch (field) {
-        'status' => 'Order status',
-        'paymentStatus' => 'Payment status',
-        'sellerTransferStatus' => 'Seller transfer status',
-        _ => _prettyLabel(field),
-      };
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '$fieldLabel updated successfully to ${_prettyLabel(value)}.',
+            'Order status updated successfully to ${_prettyLabel(value)}.',
           ),
           backgroundColor: Colors.green,
         ),
@@ -78,14 +71,12 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
             'All',
             ...AdminOrderService.orderLifecycle,
           };
-          for (final doc in docs) {
-            final status = ((doc.data()['status'] as String?) ?? '').trim().toLowerCase();
-            if (status.isNotEmpty) statuses.add(status);
-          }
           final filteredDocs = _selectedStatus == 'All'
               ? docs
               : docs.where((doc) {
-                  final status = ((doc.data()['status'] as String?) ?? '').trim().toLowerCase();
+                  final status = AdminOrderService.normalizeOrderStatus(
+                    (doc.data()['status'] as String?) ?? '',
+                  );
                   return status == _selectedStatus.toLowerCase();
                 }).toList();
 
@@ -102,7 +93,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Update fulfillment, payment, and seller transfer status for each order.',
+                'Track orders by status: ordered, in transit, and delivered.',
                 style: TextStyle(color: Color(0xFF6B7C93)),
               ),
               const SizedBox(height: 16),
@@ -146,16 +137,9 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                       (data['total'] as num?)?.toDouble() ??
                       0;
                   final orderStatus = ((data['status'] as String?) ?? 'pending')
-                      .trim()
-                      .toLowerCase();
-                  final paymentStatus =
-                      ((data['paymentStatus'] as String?) ?? 'paid')
-                          .trim()
-                          .toLowerCase();
-                  final transferStatus =
-                      ((data['sellerTransferStatus'] as String?) ?? 'pending')
-                          .trim()
-                          .toLowerCase();
+                      .trim();
+                  final normalizedOrderStatus =
+                      AdminOrderService.normalizeOrderStatus(orderStatus);
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 12),
@@ -210,36 +194,11 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                         const SizedBox(height: 14),
                         _StatusSection(
                           label: 'Order Status',
-                          value: orderStatus,
+                          value: normalizedOrderStatus,
                           values: AdminOrderService.orderLifecycle,
                           busy: _updatingOrderId == doc.id,
                           onChanged: (value) => _updateField(
                             orderId: doc.id,
-                            field: 'status',
-                            value: value,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        _StatusSection(
-                          label: 'Payment Status',
-                          value: paymentStatus,
-                          values: AdminOrderService.paymentLifecycle,
-                          busy: _updatingOrderId == doc.id,
-                          onChanged: (value) => _updateField(
-                            orderId: doc.id,
-                            field: 'paymentStatus',
-                            value: value,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        _StatusSection(
-                          label: 'Seller Transfer',
-                          value: transferStatus,
-                          values: AdminOrderService.transferLifecycle,
-                          busy: _updatingOrderId == doc.id,
-                          onChanged: (value) => _updateField(
-                            orderId: doc.id,
-                            field: 'sellerTransferStatus',
                             value: value,
                           ),
                         ),

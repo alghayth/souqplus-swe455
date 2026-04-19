@@ -1,7 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:souqplus/screens/admin_sign_in/admin_sign_in_screen.dart';
+import 'package:souqplus/screens/admin_dashboard/admin_dashboard_screen.dart';
 import 'package:souqplus/screens/init_screen.dart';
 import 'package:souqplus/services/admin_access_service.dart';
 import 'package:souqplus/services/auth_form_validator.dart';
@@ -13,16 +13,7 @@ import '../../../helper/keyboard.dart';
 import '../../forgot_password/forgot_password_screen.dart';
 
 class SignForm extends StatefulWidget {
-  const SignForm({
-    super.key,
-    this.isAdminLogin = false,
-    this.showAdminLoginLink = false,
-    this.successRouteName,
-  });
-
-  final bool isAdminLogin;
-  final bool showAdminLoginLink;
-  final String? successRouteName;
+  const SignForm({super.key});
 
   @override
   State<SignForm> createState() => _SignFormState();
@@ -36,6 +27,7 @@ class _SignFormState extends State<SignForm> {
   final _adminAccessService = const AdminAccessService();
 
   bool _loading = false;
+  bool _obscurePassword = true;
   String? _formMessage;
 
   void _clearMessage() {
@@ -66,18 +58,7 @@ class _SignFormState extends State<SignForm> {
 
     try {
       await _authLoginService.signIn(email: email, password: password);
-      if (widget.isAdminLogin) {
-        final isAdmin = await _adminAccessService.isCurrentUserAdmin();
-        if (!isAdmin) {
-          await FirebaseAuth.instance.signOut();
-          if (!mounted) return;
-          setState(
-            () => _formMessage =
-                'This account is not authorized to access the admin dashboard.',
-          );
-          return;
-        }
-      }
+      final adminAccess = await _adminAccessService.checkCurrentUserAdmin();
       await PushTokenService.saveUserFcmToken();
       if (!mounted) return;
 
@@ -87,7 +68,9 @@ class _SignFormState extends State<SignForm> {
 
       Navigator.pushNamedAndRemoveUntil(
         context,
-        widget.successRouteName ?? InitScreen.routeName,
+        adminAccess.isAdmin
+            ? AdminDashboardScreen.routeName
+            : InitScreen.routeName,
         (route) => false,
       );
     } on FirebaseAuthException catch (exception) {
@@ -137,13 +120,12 @@ class _SignFormState extends State<SignForm> {
               floatingLabelBehavior: FloatingLabelBehavior.always,
               suffixIcon: CustomSuffixIcon(svgIcon: 'assets/icons/Mail.svg'),
               counterText: '',
-              helperText: 'Maximum 30 characters',
             ),
           ),
           const SizedBox(height: 20),
           TextFormField(
             controller: _passwordController,
-            obscureText: true,
+            obscureText: _obscurePassword,
             maxLength: AuthFormValidator.passwordMaxLength,
             inputFormatters: [
               LengthLimitingTextInputFormatter(
@@ -156,11 +138,21 @@ class _SignFormState extends State<SignForm> {
             },
             validator: (value) =>
                 AuthFormValidator.validatePassword(value ?? ''),
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Password',
               hintText: 'Enter your password',
               floatingLabelBehavior: FloatingLabelBehavior.always,
-              suffixIcon: CustomSuffixIcon(svgIcon: 'assets/icons/Lock.svg'),
+              suffixIcon: IconButton(
+                onPressed: () {
+                  setState(() => _obscurePassword = !_obscurePassword);
+                },
+                icon: Icon(
+                  _obscurePassword
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                ),
+                tooltip: _obscurePassword ? 'Show Password' : 'Hide Password',
+              ),
               counterText: '',
               helperText: '8-20 chars with uppercase, lowercase, and number',
             ),
@@ -188,14 +180,6 @@ class _SignFormState extends State<SignForm> {
           const SizedBox(height: 20),
           Row(
             children: [
-              if (widget.showAdminLoginLink)
-                GestureDetector(
-                  onTap: () => Navigator.pushNamed(
-                    context,
-                    AdminSignInScreen.routeName,
-                  ),
-                  child: const Text('Admin Login'),
-                ),
               const Spacer(),
               GestureDetector(
                 onTap: () => Navigator.pushNamed(

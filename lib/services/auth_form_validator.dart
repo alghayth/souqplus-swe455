@@ -46,7 +46,7 @@ class AuthFormValidator {
         !_uppercaseRegExp.hasMatch(trimmedValue) ||
         !_lowercaseRegExp.hasMatch(trimmedValue) ||
         !_numberRegExp.hasMatch(trimmedValue)) {
-      return 'Password must be at least 8 characters and include uppercase, lowercase, and number';
+      return 'Password must be 8-20 characters and include uppercase, lowercase, and number';
     }
     return null;
   }

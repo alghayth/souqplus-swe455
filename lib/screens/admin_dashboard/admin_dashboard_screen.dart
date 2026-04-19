@@ -35,17 +35,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Future<void> _verifyAdminAccess() async {
-    final isAdmin = await _adminAccessService.isCurrentUserAdmin();
+    final adminAccess = await _adminAccessService.checkCurrentUserAdmin();
     if (!mounted) return;
 
-    if (!isAdmin) {
+    if (!adminAccess.isAdmin) {
       await FirebaseAuth.instance.signOut();
       if (!mounted) return;
       Navigator.pushNamedAndRemoveUntil(
         context,
         SignInScreen.routeName,
         (route) => false,
-        arguments: 'Admin access is restricted to authorized accounts only.',
+        arguments: adminAccess.message ??
+            'Admin access is restricted to authorized accounts only.',
       );
       return;
     }
@@ -100,20 +101,45 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _adminOrderService.ordersStream(),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Scaffold(
+            backgroundColor: const Color.fromARGB(255, 253, 246, 210),
+            appBar: AppBar(
+              backgroundColor: kSecondaryColor,
+              title: const PageHeaderTitle('Admin Dashboard'),
+              actions: [
+                IconButton(
+                  onPressed: _confirmLogout,
+                  icon: const Icon(Icons.logout_rounded),
+                  tooltip: 'Log Out',
+                ),
+                const SizedBox(width: 8),
+              ],
+            ),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  _friendlyDashboardError(snapshot.error),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: kTextColor,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+
         final docs = snapshot.data?.docs ?? const [];
         final pendingOrders = docs.where((doc) {
-          final status = ((doc.data()['status'] as String?) ?? '')
-              .trim()
-              .toLowerCase();
-          return status == 'pending';
+          final status = AdminOrderService.normalizeOrderStatus(
+            (doc.data()['status'] as String?) ?? '',
+          );
+          return status == 'ordered';
         }).length;
-        final pendingTransfers = docs.where((doc) {
-          final status = ((doc.data()['sellerTransferStatus'] as String?) ?? '')
-              .trim()
-              .toLowerCase();
-          return status == 'pending';
-        }).length;
-        final alertCount = pendingOrders + pendingTransfers;
+        final alertCount = pendingOrders;
         final totalRevenue = docs.fold<double>(0, (totalValue, doc) {
           final data = doc.data();
           final paymentStatus = ((data['paymentStatus'] as String?) ?? '')
@@ -243,7 +269,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         icon: Icons.receipt_long_rounded,
                         title: 'Orders',
                         description:
-                            'View, filter, and update order, payment, and transfer statuses.',
+                            'View, filter, and update ordered, in transit, and delivered orders.',
                         badgeText: '${docs.length}',
                         onTap: () => Navigator.pushNamed(
                           context,
@@ -264,7 +290,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         icon: Icons.payments_rounded,
                         title: 'Payments',
                         description:
-                            'Monitor revenue, paid orders, refunds, and seller transfer progress.',
+                            'Monitor revenue and update paid, unpaid, or refunded orders.',
                         badgeText: 'SAR ${totalRevenue.toStringAsFixed(0)}',
                         onTap: () => Navigator.pushNamed(
                           context,
@@ -275,7 +301,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         icon: Icons.notifications_active_rounded,
                         title: 'Alerts',
                         description:
-                            'Track pending orders, payout follow-ups, and items that need attention.',
+                            'Track ordered items that still need admin attention.',
                         badgeText: '$alertCount',
                         onTap: () => Navigator.pushNamed(
                           context,
@@ -338,4 +364,12 @@ class _HeroStatChip extends StatelessWidget {
       ),
     );
   }
+}
+
+String _friendlyDashboardError(Object? error) {
+  if (error is FirebaseException && error.code == 'permission-denied') {
+    return 'Firebase denied access to admin data. Confirm this signed-in user has role "admin" or isAdmin true in the users collection of the Firestore database "souqplus", then deploy firestore.rules.';
+  }
+
+  return 'Could not load admin dashboard data. Please try again.';
 }

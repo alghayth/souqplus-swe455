@@ -13,13 +13,8 @@ class RegistrationScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-  centerTitle: true,
-  title: Image.asset(
-    "assets/images/logo.png",
-    height: 40,
-  
-),
-
+        centerTitle: true,
+        title: Image.asset("assets/images/logo.png", height: 40),
       ),
       body: SafeArea(
         child: SizedBox(
@@ -43,7 +38,7 @@ class RegistrationScreen extends StatelessWidget {
                     'By continuing your confirm that you agree \nwith our Term and Condition',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodySmall,
-                  )
+                  ),
                 ],
               ),
             ),
@@ -53,4 +48,3 @@ class RegistrationScreen extends StatelessWidget {
     );
   }
 }
-

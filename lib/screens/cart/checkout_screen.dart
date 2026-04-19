@@ -369,7 +369,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       'total': _cartTotal,
       'deliveryAddress': deliveryAddress,
       'deliveryLocationDetails': deliveryLocationDetails,
-      'status': 'pending',
+      'status': 'ordered',
       'createdAt': FieldValue.serverTimestamp(),
     };
 

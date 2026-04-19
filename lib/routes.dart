@@ -11,7 +11,6 @@ import 'package:souqplus/screens/admin_dashboard/admin_dashboard_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_orders_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_payments_screen.dart';
 import 'package:souqplus/screens/forgot_password/forgot_password_screen.dart';
-import 'package:souqplus/screens/admin_sign_in/admin_sign_in_screen.dart';
 import 'package:souqplus/screens/home/home_screen.dart';
 import 'package:souqplus/screens/init_screen.dart';
 import 'package:souqplus/screens/login_success/login_success_screen.dart';
@@ -31,7 +30,6 @@ import 'package:souqplus/seller.dart';
 import 'package:souqplus/screens/driver_registration/driver_registration_screen.dart';
 
 // ✅ ROLE SCREEN
-import 'screens/role/role_selection_screen.dart';
 import 'package:souqplus/screens/driver_registration/driver_home_screen.dart';
 
 final Map<String, WidgetBuilder> routes = {
@@ -48,9 +46,6 @@ DriverRegistrationScreen.routeName: (context) =>
   SplashScreen.routeName: (context) => const SplashScreen(),
 
   // ✅ ROLE SELECTION
-  RoleSelectionScreen.routeName: (context) =>
-      const RoleSelectionScreen(),
-
   // USER LOGIN
   SignInScreen.routeName: (context) => const SignInScreen(),
 
@@ -58,8 +53,7 @@ DriverRegistrationScreen.routeName: (context) =>
   DriverSignInScreen.routeName: (context) =>
       const DriverSignInScreen(),
 
-  // ADMIN (already exists)
-  AdminSignInScreen.routeName: (context) => const AdminSignInScreen(),
+  // ADMIN
   AdminDashboardScreen.routeName: (context) => const AdminDashboardScreen(),
   AdminOrdersScreen.routeName: (context) => const AdminOrdersScreen(),
   AdminCategoriesScreen.routeName: (context) =>

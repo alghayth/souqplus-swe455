@@ -31,24 +31,17 @@ class AdminAlertsScreen extends StatelessWidget {
           for (final doc in docs) {
             final data = doc.data();
             final buyerName = (data['buyerName'] as String? ?? 'Unknown buyer').trim();
-            final orderStatus = ((data['status'] as String?) ?? '').trim().toLowerCase();
-            final transferStatus =
-                ((data['sellerTransferStatus'] as String?) ?? '').trim().toLowerCase();
+            final orderStatus = AdminOrderService.normalizeOrderStatus(
+              (data['status'] as String?) ?? '',
+            );
             final paymentStatus =
                 ((data['paymentStatus'] as String?) ?? '').trim().toLowerCase();
 
-            if (orderStatus == 'pending') {
+            if (orderStatus == 'ordered') {
               alerts.add(_AlertItem(
-                title: 'Pending order needs follow-up',
-                message: 'Order for $buyerName is still pending.',
+                title: 'Ordered item needs follow-up',
+                message: 'Order for $buyerName is waiting to move in transit.',
                 color: Colors.orange,
-              ));
-            }
-            if (transferStatus == 'pending') {
-              alerts.add(_AlertItem(
-                title: 'Seller payout still pending',
-                message: 'Transfer for $buyerName has not been completed yet.',
-                color: kPrimaryColor,
               ));
             }
             if (paymentStatus == 'refunded') {

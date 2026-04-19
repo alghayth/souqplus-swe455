@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../constants.dart';
 import '../sign_in/sign_in_screen.dart';
-import '../role/role_selection_screen.dart'; // ✅ ADD THIS
 import 'components/splash_content.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -91,7 +90,7 @@ class _SplashScreenState extends State<SplashScreen> {
                         onPressed: () {
                           Navigator.pushNamed(
                             context,
-                            RoleSelectionScreen.routeName,
+                            SignInScreen.routeName,
                           );
                         },
                         child: const Text("Continue"),

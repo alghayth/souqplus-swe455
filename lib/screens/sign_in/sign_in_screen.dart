@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../components/no_account_text.dart';
+import '../Regitration/registration_screen.dart';
+import '../driver_registration/driver_registration_screen.dart';
 import 'components/sign_form.dart';
 
 class SignInScreen extends StatefulWidget {
@@ -54,15 +55,59 @@ class _SignInScreenState extends State<SignInScreen> {
                     textAlign: TextAlign.center,
                   ),
                   SizedBox(height: 16),
-                  SignForm(showAdminLoginLink: true),
+                  _RegistrationButtons(),
+                  SizedBox(height: 16),
+                  SignForm(),
                   SizedBox(height: 20),
-                  NoAccountText(),
                 ],
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _RegistrationButtons extends StatelessWidget {
+  const _RegistrationButtons();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton(
+            onPressed: () =>
+                Navigator.pushNamed(context, RegistrationScreen.routeName),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.person_add_alt_1_rounded, size: 20),
+                SizedBox(width: 8),
+                Flexible(child: Text('Register as User')),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: OutlinedButton(
+            onPressed: () => Navigator.pushNamed(
+              context,
+              DriverRegistrationScreen.routeName,
+            ),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.delivery_dining_rounded, size: 20),
+                SizedBox(width: 8),
+                Flexible(child: Text('Register as Driver')),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

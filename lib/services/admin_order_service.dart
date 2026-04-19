@@ -5,11 +5,9 @@ class AdminOrderService {
   const AdminOrderService();
 
   static const List<String> orderLifecycle = [
-    'pending',
-    'confirmed',
-    'shipped',
+    'ordered',
+    'in transit',
     'delivered',
-    'cancelled',
   ];
 
   static const List<String> paymentLifecycle = [
@@ -18,14 +16,21 @@ class AdminOrderService {
     'refunded',
   ];
 
-  static const List<String> transferLifecycle = [
-    'pending',
-    'transferred',
-    'failed',
-  ];
-
   Stream<QuerySnapshot<Map<String, dynamic>>> ordersStream() {
-    return db.collection('orders').orderBy('createdAt', descending: true).snapshots();
+    return db
+        .collection('orders')
+        .orderBy('createdAt', descending: true)
+        .snapshots();
+  }
+
+  static String normalizeOrderStatus(String value) {
+    final status = value.trim().toLowerCase();
+    return switch (status) {
+      'ordered' || 'pending' || 'confirmed' => 'ordered',
+      'in transit' || 'in_transit' || 'shipped' => 'in transit',
+      'delivered' => 'delivered',
+      _ => status,
+    };
   }
 
   Future<void> updateOrderField({

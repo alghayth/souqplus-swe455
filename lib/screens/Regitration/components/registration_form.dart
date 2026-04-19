@@ -17,6 +17,12 @@ class RegistrationForm extends StatefulWidget {
 }
 
 class _RegistrationFormState extends State<RegistrationForm> {
+  static const int _emailMaxLength = 30;
+  static const int _nameMaxLength = 30;
+  static const int _phoneMaxLength = 10;
+  static const int _passwordMaxLength = 20;
+  static const int _cityMaxLength = 30;
+
   static final RegExp _nameRegExp = RegExp(
     r"^[A-Za-z\u0600-\u06FF][A-Za-z\u0600-\u06FF\s'-]*$",
   );
@@ -48,8 +54,8 @@ class _RegistrationFormState extends State<RegistrationForm> {
     if (text.length < 2) {
       return '$fieldLabel must be at least 2 characters';
     }
-    if (text.length > 30) {
-      return '$fieldLabel cannot exceed 30 characters';
+    if (text.length > _nameMaxLength) {
+      return '$fieldLabel cannot exceed $_nameMaxLength characters';
     }
     if (!_nameRegExp.hasMatch(text)) {
       return '$fieldLabel can only contain letters';
@@ -225,16 +231,19 @@ class _RegistrationFormState extends State<RegistrationForm> {
             keyboardType: TextInputType.name,
             textCapitalization: TextCapitalization.words,
             inputFormatters: [
+              LengthLimitingTextInputFormatter(_nameMaxLength),
               FilteringTextInputFormatter.allow(
                 RegExp(r"[A-Za-z\u0600-\u06FF\s'-]"),
               ),
             ],
+            maxLength: _nameMaxLength,
             validator: (value) => _validateName(value, 'First name'),
             decoration: const InputDecoration(
               labelText: 'First Name',
               hintText: 'Enter your first name',
               floatingLabelBehavior: FloatingLabelBehavior.always,
               suffixIcon: CustomSuffixIcon(svgIcon: 'assets/icons/person.svg'),
+              counterText: '',
             ),
           ),
           const SizedBox(height: 20),
@@ -243,26 +252,36 @@ class _RegistrationFormState extends State<RegistrationForm> {
             keyboardType: TextInputType.name,
             textCapitalization: TextCapitalization.words,
             inputFormatters: [
+              LengthLimitingTextInputFormatter(_nameMaxLength),
               FilteringTextInputFormatter.allow(
                 RegExp(r"[A-Za-z\u0600-\u06FF\s'-]"),
               ),
             ],
+            maxLength: _nameMaxLength,
             validator: (value) => _validateName(value, 'Last name'),
             decoration: const InputDecoration(
               labelText: 'Last Name',
               hintText: 'Enter your last name',
               floatingLabelBehavior: FloatingLabelBehavior.always,
               suffixIcon: CustomSuffixIcon(svgIcon: 'assets/icons/person.svg'),
+              counterText: '',
             ),
           ),
           const SizedBox(height: 20),
           TextFormField(
             controller: _emailController,
             keyboardType: TextInputType.emailAddress,
+            maxLength: _emailMaxLength,
+            inputFormatters: [
+              LengthLimitingTextInputFormatter(_emailMaxLength),
+            ],
             validator: (value) {
-              if (value == null || value.trim().isEmpty) {
+              final email = value?.trim() ?? '';
+              if (email.isEmpty) {
                 return 'Email is required';
-              } else if (!emailValidatorRegExp.hasMatch(value.trim())) {
+              } else if (email.length > _emailMaxLength) {
+                return 'Email must be $_emailMaxLength characters or fewer';
+              } else if (!emailValidatorRegExp.hasMatch(email)) {
                 return 'Enter a valid email';
               }
               return null;
@@ -272,6 +291,7 @@ class _RegistrationFormState extends State<RegistrationForm> {
               hintText: 'Enter your email',
               floatingLabelBehavior: FloatingLabelBehavior.always,
               suffixIcon: CustomSuffixIcon(svgIcon: 'assets/icons/Mail.svg'),
+              counterText: '',
             ),
           ),
           const SizedBox(height: 20),
@@ -280,9 +300,9 @@ class _RegistrationFormState extends State<RegistrationForm> {
             keyboardType: TextInputType.phone,
             inputFormatters: [
               FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(10),
+              LengthLimitingTextInputFormatter(_phoneMaxLength),
             ],
-            maxLength: 10,
+            maxLength: _phoneMaxLength,
             validator: _validatePhoneNumber,
             decoration: const InputDecoration(
               labelText: 'Phone Number',
@@ -293,13 +313,17 @@ class _RegistrationFormState extends State<RegistrationForm> {
               ),
               counterText: '',
               helperText: 'Enter 10 digits starting with 05',
-              helperStyle: TextStyle(color: Colors.grey),
+              helperStyle: TextStyle(color: Colors.grey, fontSize: 12),
             ),
           ),
           const SizedBox(height: 20),
           TextFormField(
             controller: _passwordController,
             obscureText: true,
+            maxLength: _passwordMaxLength,
+            inputFormatters: [
+              LengthLimitingTextInputFormatter(_passwordMaxLength),
+            ],
             onChanged: (value) {
               setState(() {
                 passwordInput = value;
@@ -319,6 +343,7 @@ class _RegistrationFormState extends State<RegistrationForm> {
               hintText: 'Enter your password',
               floatingLabelBehavior: FloatingLabelBehavior.always,
               suffixIcon: CustomSuffixIcon(svgIcon: 'assets/icons/Lock.svg'),
+              counterText: '',
             ),
           ),
           if (passwordInput.isNotEmpty) ...[
@@ -331,6 +356,10 @@ class _RegistrationFormState extends State<RegistrationForm> {
           TextFormField(
             controller: _confirmPasswordController,
             obscureText: true,
+            maxLength: _passwordMaxLength,
+            inputFormatters: [
+              LengthLimitingTextInputFormatter(_passwordMaxLength),
+            ],
             validator: (value) {
               if (value == null || value.isEmpty) {
                 return 'Please confirm your password';
@@ -344,17 +373,22 @@ class _RegistrationFormState extends State<RegistrationForm> {
               hintText: 'Re-enter your password',
               floatingLabelBehavior: FloatingLabelBehavior.always,
               suffixIcon: CustomSuffixIcon(svgIcon: 'assets/icons/Lock.svg'),
+              counterText: '',
             ),
           ),
           const SizedBox(height: 20),
           TextFormField(
             controller: _addressController,
             keyboardType: TextInputType.streetAddress,
+            maxLength: _cityMaxLength,
+            inputFormatters: [LengthLimitingTextInputFormatter(_cityMaxLength)],
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
                 return 'City is required';
               } else if (value.trim().length < 3) {
                 return 'City is too short';
+              } else if (value.trim().length > _cityMaxLength) {
+                return 'City cannot exceed $_cityMaxLength characters';
               }
               return null;
             },
@@ -365,6 +399,7 @@ class _RegistrationFormState extends State<RegistrationForm> {
               suffixIcon: CustomSuffixIcon(
                 svgIcon: 'assets/icons/Location.svg',
               ),
+              counterText: '',
             ),
           ),
           const SizedBox(height: 30),

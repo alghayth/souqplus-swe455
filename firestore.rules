@@ -9,19 +9,74 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
+    function adminRoles() {
+      return [
+        "admin",
+        "Admin",
+        "ADMIN",
+        "administrator",
+        "Administrator",
+        "super_admin",
+        "superadmin"
+      ];
+    }
+
+    function adminEmails() {
+      return [
+        "norahsulialaqeel@gmail.com"
+      ];
+    }
+
+    function hasAdminMarker(data) {
+      return data.role in adminRoles()
+        || data.userRole in adminRoles()
+        || data.accountType in adminRoles()
+        || data.isAdmin == true
+        || data.isAdmin == "true"
+        || data.admin == true
+        || data.admin == "true";
+    }
+
     function isAdmin() {
       return isSignedIn()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && (
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin"
-          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true
+          request.auth.token.admin == true
+          || request.auth.token.isAdmin == true
+          || request.auth.token.email in adminEmails()
+          || (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && hasAdminMarker(
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data
+            )
+          )
         );
     }
 
     match /users/{uid} {
-      allow read: if isOwner(uid);
-      allow create: if isOwner(uid);
-      allow update: if isOwner(uid);
+      allow read: if isOwner(uid) || isAdmin();
+      allow create: if isOwner(uid)
+        && !hasAdminMarker(request.resource.data);
+      allow update: if (
+          isOwner(uid)
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'admin',
+            'isAdmin',
+            'role',
+            'userRole',
+            'accountType'
+          ])
+        )
+        || (
+          isAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'isBlocked',
+            'blockedAt',
+            'blockedBy',
+            'unblockedAt',
+            'unblockedBy',
+            'updatedAt'
+          ])
+        );
       allow delete: if isOwner(uid);
     }
 
@@ -51,7 +106,7 @@ service cloud.firestore {
           )
         );
       allow delete: if isSignedIn()
-        && resource.data.ownerUid == request.auth.uid;
+        && (resource.data.ownerUid == request.auth.uid || isAdmin());
     }
 
     match /orders/{orderId} {

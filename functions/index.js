@@ -375,6 +375,49 @@ function logFunctionError(context, error) {
   return {message, type, code, raw};
 }
 
+function hasAdminRole(data) {
+  const role = String(
+      data.role || data.userRole || data.accountType || "",
+  ).trim().toLowerCase();
+  return role === "admin" ||
+    role === "administrator" ||
+    role === "super_admin" ||
+    role === "superadmin" ||
+    data.isAdmin === true ||
+    data.isAdmin === "true" ||
+    data.admin === true ||
+    data.admin === "true";
+}
+
+async function assertAdminCallable(request) {
+  const auth = request.auth;
+  if (!auth) {
+    throw new HttpsError("unauthenticated", "You must be logged in.");
+  }
+
+  const token = auth.token || {};
+  const email = String(token.email || "").trim().toLowerCase();
+  if (
+    token.admin === true ||
+    token.isAdmin === true ||
+    email === "norahsulialaqeel@gmail.com"
+  ) {
+    return;
+  }
+
+  const userSnapshot = await sellerOnboardingDb
+      .collection("users")
+      .doc(auth.uid)
+      .get();
+  const userData = userSnapshot.data() || {};
+  if (!hasAdminRole(userData)) {
+    throw new HttpsError(
+        "permission-denied",
+        "Only admins can remove product posts.",
+    );
+  }
+}
+
 function isStripeAccountInvalidError(error) {
   if (!error || typeof error !== "object") {
     return false;
@@ -1090,6 +1133,29 @@ exports.sendnotificationtousers = onCall(async (request) => {
   await Promise.all(writes);
 
   return {success: true};
+});
+
+exports.removeProductPostAsAdmin = onCall(async (request) => {
+  await assertAdminCallable(request);
+
+  const productId = String(
+      request.data && request.data.productId || "",
+  ).trim();
+  if (!productId) {
+    throw new HttpsError(
+        "invalid-argument",
+        "productId is required.",
+    );
+  }
+
+  const productRef = sellerOnboardingDb.collection("products").doc(productId);
+  const productSnapshot = await productRef.get();
+  if (!productSnapshot.exists) {
+    throw new HttpsError("not-found", "Product post was not found.");
+  }
+
+  await productRef.delete();
+  return {success: true, productId};
 });
 
 exports.sendPushOnNotificationCreated = onDocumentCreated(

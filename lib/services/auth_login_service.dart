@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:souqplus/main.dart';
 
 class AuthLoginService {
   const AuthLoginService();
@@ -13,6 +14,21 @@ class AuthLoginService {
       email: email.trim().toLowerCase(),
       password: password.trim(),
     );
+  }
+
+  Future<bool> isCurrentUserBlocked() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+
+    final userDoc = await db.collection('users').doc(user.uid).get();
+    final data = userDoc.data();
+    if (data == null) return false;
+
+    final status = (data['status'] as String? ?? '').trim().toLowerCase();
+    return data['isBlocked'] == true ||
+        data['blocked'] == true ||
+        status == 'blocked' ||
+        status == 'disabled';
   }
 
   String mapAuthError(FirebaseAuthException exception) {

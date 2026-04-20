@@ -58,6 +58,17 @@ class _SignFormState extends State<SignForm> {
 
     try {
       await _authLoginService.signIn(email: email, password: password);
+      final isBlocked = await _authLoginService.isCurrentUserBlocked();
+      if (isBlocked) {
+        await FirebaseAuth.instance.signOut();
+        if (!mounted) return;
+        setState(
+          () => _formMessage =
+              'This account has been blocked by the admin. Please contact support.',
+        );
+        return;
+      }
+
       final adminAccess = await _adminAccessService.checkCurrentUserAdmin();
       await PushTokenService.saveUserFcmToken();
       if (!mounted) return;

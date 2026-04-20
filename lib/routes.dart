@@ -4,6 +4,7 @@ import 'package:souqplus/screens/cart/cart_screen.dart';
 import 'package:souqplus/screens/cart/checkout_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_alerts_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_categories_screen.dart';
+import 'package:souqplus/screens/admin_dashboard/admin_records_screen.dart';
 import 'package:souqplus/screens/complete_profile/complete_profile_screen.dart';
 import 'package:souqplus/screens/details/details_screen.dart';
 import 'package:souqplus/screens/favorite/favorite_screen.dart';
@@ -39,39 +40,31 @@ final Map<String, WidgetBuilder> routes = {
     return InitScreen(initialIndex: initialIndex);
   },
 
-
-DriverRegistrationScreen.routeName: (context) =>
-    const DriverRegistrationScreen(),
+  DriverRegistrationScreen.routeName: (context) =>
+      const DriverRegistrationScreen(),
   // SPLASH
   SplashScreen.routeName: (context) => const SplashScreen(),
 
-  // ✅ ROLE SELECTION
   // USER LOGIN
   SignInScreen.routeName: (context) => const SignInScreen(),
 
   // ✅ DRIVER LOGIN
-  DriverSignInScreen.routeName: (context) =>
-      const DriverSignInScreen(),
+  DriverSignInScreen.routeName: (context) => const DriverSignInScreen(),
 
   // ADMIN
   AdminDashboardScreen.routeName: (context) => const AdminDashboardScreen(),
   AdminOrdersScreen.routeName: (context) => const AdminOrdersScreen(),
-  AdminCategoriesScreen.routeName: (context) =>
-      const AdminCategoriesScreen(),
-  AdminPaymentsScreen.routeName: (context) =>
-      const AdminPaymentsScreen(),
+  AdminCategoriesScreen.routeName: (context) => const AdminCategoriesScreen(),
+  AdminPaymentsScreen.routeName: (context) => const AdminPaymentsScreen(),
   AdminAlertsScreen.routeName: (context) => const AdminAlertsScreen(),
+  AdminRecordsScreen.routeName: (context) => const AdminRecordsScreen(),
 
   // OTHER SCREENS
-  ForgotPasswordScreen.routeName: (context) =>
-      const ForgotPasswordScreen(),
-  LoginSuccessScreen.routeName: (context) =>
-      const LoginSuccessScreen(),
-  RegistrationScreen.routeName: (context) =>
-      const RegistrationScreen(),
-  CompleteProfileScreen.routeName: (context) =>
-      const CompleteProfileScreen(),
-      DriverHomeScreen.routeName: (context) => const DriverHomeScreen(),
+  ForgotPasswordScreen.routeName: (context) => const ForgotPasswordScreen(),
+  LoginSuccessScreen.routeName: (context) => const LoginSuccessScreen(),
+  RegistrationScreen.routeName: (context) => const RegistrationScreen(),
+  CompleteProfileScreen.routeName: (context) => const CompleteProfileScreen(),
+  DriverHomeScreen.routeName: (context) => const DriverHomeScreen(),
 
   OtpScreen.routeName: (context) {
     final args = ModalRoute.of(context)?.settings.arguments;
@@ -112,18 +105,12 @@ DriverRegistrationScreen.routeName: (context) =>
     return CheckoutScreen(initialItems: initialItems);
   },
 
-  SearchScreen.routeName: (context) =>
-      const InitScreen(initialIndex: 2),
-  ProfileScreen.routeName: (context) =>
-      const InitScreen(initialIndex: 3),
-  NotificationsScreen.routeName: (context) =>
-      const NotificationsScreen(),
-  MyAccountScreen.routeName: (context) =>
-      const MyAccountScreen(),
-  PurchaseHistoryScreen.routeName: (context) =>
-      const PurchaseHistoryScreen(),
-  PostedProductsScreen.routeName: (context) =>
-      const PostedProductsScreen(),
+  SearchScreen.routeName: (context) => const InitScreen(initialIndex: 2),
+  ProfileScreen.routeName: (context) => const InitScreen(initialIndex: 3),
+  NotificationsScreen.routeName: (context) => const NotificationsScreen(),
+  MyAccountScreen.routeName: (context) => const MyAccountScreen(),
+  PurchaseHistoryScreen.routeName: (context) => const PurchaseHistoryScreen(),
+  PostedProductsScreen.routeName: (context) => const PostedProductsScreen(),
 
   SellerScreen.routeName: (context) => const SellerScreen(),
 };

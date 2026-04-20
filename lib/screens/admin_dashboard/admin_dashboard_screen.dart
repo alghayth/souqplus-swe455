@@ -7,6 +7,7 @@ import 'package:souqplus/screens/admin_dashboard/admin_alerts_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_categories_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_orders_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_payments_screen.dart';
+import 'package:souqplus/screens/admin_dashboard/admin_records_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/components/admin_feature_card.dart';
 import 'package:souqplus/screens/sign_in/sign_in_screen.dart';
 import 'package:souqplus/services/admin_access_service.dart';
@@ -45,7 +46,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         context,
         SignInScreen.routeName,
         (route) => false,
-        arguments: adminAccess.message ??
+        arguments:
+            adminAccess.message ??
             'Admin access is restricted to authorized accounts only.',
       );
       return;
@@ -89,9 +91,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isCheckingAccess) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (!_hasAdminAccess) {
@@ -116,19 +116,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 const SizedBox(width: 8),
               ],
             ),
-            body: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  _friendlyDashboardError(snapshot.error),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: kTextColor,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
+            body: _FirebaseErrorPanel(error: snapshot.error.toString()),
+          );
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            backgroundColor: Color.fromARGB(255, 253, 246, 210),
+            body: Center(child: CircularProgressIndicator()),
           );
         }
 
@@ -196,8 +191,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 child: CircleAvatar(
                   radius: 16,
                   backgroundColor: kPrimaryColor,
-                  child: Icon(Icons.admin_panel_settings_rounded,
-                      size: 18, color: kSecondaryColor),
+                  child: Icon(
+                    Icons.admin_panel_settings_rounded,
+                    size: 18,
+                    color: kSecondaryColor,
+                  ),
                 ),
               ),
               IconButton(
@@ -246,14 +244,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         spacing: 10,
                         runSpacing: 10,
                         children: [
+                          _HeroStatChip(label: '${docs.length} Orders'),
                           _HeroStatChip(
-                            label: '${docs.length} Orders',
+                            label:
+                                'SAR ${totalRevenue.toStringAsFixed(0)} Revenue',
                           ),
-                          _HeroStatChip(
-                            label: 'SAR ${totalRevenue.toStringAsFixed(0)} Revenue',
+                          _HeroStatChip(label: '$alertCount Alerts'),
+                          _LiveCountChip(
+                            label: 'Products',
+                            stream: _adminOrderService.productsStream(),
                           ),
-                          _HeroStatChip(
-                            label: '$alertCount Alerts',
+                          _LiveCountChip(
+                            label: 'Users',
+                            stream: _adminOrderService.usersStream(),
+                          ),
+                          _LiveCountChip(
+                            label: 'Categories',
+                            stream: _adminOrderService.categoriesStream(),
                           ),
                         ],
                       ),
@@ -308,6 +315,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           AdminAlertsScreen.routeName,
                         ),
                       ),
+                      AdminFeatureCard(
+                        icon: Icons.storage_rounded,
+                        title: 'Database',
+                        description:
+                            'View registered users and product posts from Firestore.',
+                        onTap: () => Navigator.pushNamed(
+                          context,
+                          AdminRecordsScreen.routeName,
+                        ),
+                      ),
                     ];
 
                     if (!isGrid) {
@@ -322,13 +339,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       );
                     }
 
-                    final itemWidth =
-                        (constraints.maxWidth - 14) / 2;
+                    final itemWidth = (constraints.maxWidth - 14) / 2;
                     return Wrap(
                       spacing: 14,
                       runSpacing: 14,
                       children: cards
-                          .map((card) => SizedBox(width: itemWidth, child: card))
+                          .map(
+                            (card) => SizedBox(width: itemWidth, child: card),
+                          )
                           .toList(),
                     );
                   },
@@ -366,10 +384,73 @@ class _HeroStatChip extends StatelessWidget {
   }
 }
 
-String _friendlyDashboardError(Object? error) {
-  if (error is FirebaseException && error.code == 'permission-denied') {
-    return 'Firebase denied access to admin data. Confirm this signed-in user has role "admin" or isAdmin true in the users collection of the Firestore database "souqplus", then deploy firestore.rules.';
-  }
+class _LiveCountChip extends StatelessWidget {
+  const _LiveCountChip({required this.label, required this.stream});
 
-  return 'Could not load admin dashboard data. Please try again.';
+  final String label;
+  final Stream<QuerySnapshot<Map<String, dynamic>>> stream;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: stream,
+      builder: (context, snapshot) {
+        final value = snapshot.hasError
+            ? 'Error'
+            : snapshot.connectionState == ConnectionState.waiting
+            ? '...'
+            : '${snapshot.data?.docs.length ?? 0}';
+        return _HeroStatChip(label: '$value $label');
+      },
+    );
+  }
+}
+
+class _FirebaseErrorPanel extends StatelessWidget {
+  const _FirebaseErrorPanel({required this.error});
+
+  final String error;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFD8E3EE)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.cloud_off_rounded,
+                color: kSecondaryColor,
+                size: 42,
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Firebase data could not be loaded.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: kTextColor,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                error,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Color(0xFF6B7C93)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

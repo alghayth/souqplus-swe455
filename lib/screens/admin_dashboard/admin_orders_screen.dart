@@ -41,9 +41,9 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
     } catch (e) {
       if (!mounted) return;
       final message = _friendlyUpdateErrorMessage(e);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     } finally {
       if (mounted) setState(() => _updatingOrderId = null);
     }
@@ -53,24 +53,27 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color.fromARGB(255, 253, 246, 210),
-      appBar: AppBar(
-        title: const PageHeaderTitle('Orders'),
-      ),
+      appBar: AppBar(title: const PageHeaderTitle('Orders')),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: _adminOrderService.ordersStream(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return Center(child: Text('Could not load orders: ${snapshot.error}'));
+            return Center(
+              child: Text('Could not load orders: ${snapshot.error}'),
+            );
           }
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
           final docs = snapshot.data?.docs ?? const [];
-          final statuses = <String>{
-            'All',
-            ...AdminOrderService.orderLifecycle,
-          };
+          final statuses = <String>{'All', ...AdminOrderService.orderLifecycle};
+          for (final doc in docs) {
+            final status = AdminOrderService.normalizeOrderStatus(
+              (doc.data()['status'] as String?) ?? '',
+            );
+            if (status.isNotEmpty) statuses.add(status);
+          }
           final filteredDocs = _selectedStatus == 'All'
               ? docs
               : docs.where((doc) {
@@ -112,7 +115,8 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                           color: selected ? Colors.white : kTextColor,
                           fontWeight: FontWeight.w700,
                         ),
-                        onSelected: (_) => setState(() => _selectedStatus = status),
+                        onSelected: (_) =>
+                            setState(() => _selectedStatus = status),
                       ),
                     );
                   }).toList(),
@@ -132,8 +136,14 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                 ...filteredDocs.map((doc) {
                   final data = doc.data();
                   final buyerName = (data['buyerName'] as String? ?? '').trim();
-                  final buyerEmail = (data['buyerEmail'] as String? ?? '').trim();
-                  final total = (data['totalPriceSar'] as num?)?.toDouble() ??
+                  final buyerEmail = (data['buyerEmail'] as String? ?? '')
+                      .trim();
+                  final buyerPhone = (data['buyerPhoneNumber'] as String? ?? '')
+                      .trim();
+                  final deliveryAddress =
+                      (data['deliveryAddress'] as String? ?? '').trim();
+                  final total =
+                      (data['totalPriceSar'] as num?)?.toDouble() ??
                       (data['total'] as num?)?.toDouble() ??
                       0;
                   final orderStatus = ((data['status'] as String?) ?? 'pending')
@@ -158,9 +168,30 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          buyerEmail.isEmpty ? 'No email available' : buyerEmail,
+                          buyerEmail.isEmpty
+                              ? 'No email available'
+                              : buyerEmail,
                           style: const TextStyle(color: Color(0xFF6B7C93)),
                         ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Order ID: ${doc.id}',
+                          style: const TextStyle(color: Color(0xFF6B7C93)),
+                        ),
+                        if (buyerPhone.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Phone: $buyerPhone',
+                            style: const TextStyle(color: Color(0xFF6B7C93)),
+                          ),
+                        ],
+                        if (deliveryAddress.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Delivery: $deliveryAddress',
+                            style: const TextStyle(color: Color(0xFF6B7C93)),
+                          ),
+                        ],
                         const SizedBox(height: 8),
                         Text(
                           'Total: SAR ${total.toStringAsFixed(2)}',
@@ -169,6 +200,8 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                             fontWeight: FontWeight.w700,
                           ),
                         ),
+                        const SizedBox(height: 10),
+                        _ProductsSummary(data: data),
                         if (_updatingOrderId == doc.id) ...[
                           const SizedBox(height: 10),
                           const Row(
@@ -197,10 +230,8 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                           value: normalizedOrderStatus,
                           values: AdminOrderService.orderLifecycle,
                           busy: _updatingOrderId == doc.id,
-                          onChanged: (value) => _updateField(
-                            orderId: doc.id,
-                            value: value,
-                          ),
+                          onChanged: (value) =>
+                              _updateField(orderId: doc.id, value: value),
                         ),
                       ],
                     ),
@@ -283,6 +314,57 @@ class _StatusSection extends StatelessWidget {
   }
 }
 
+class _ProductsSummary extends StatelessWidget {
+  const _ProductsSummary({required this.data});
+
+  final Map<String, dynamic> data;
+
+  @override
+  Widget build(BuildContext context) {
+    final rawProducts = data['products'] ?? data['items'];
+    if (rawProducts is! List || rawProducts.isEmpty) {
+      return const Text(
+        'Products: Not available',
+        style: TextStyle(color: Color(0xFF6B7C93)),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Products',
+          style: TextStyle(color: kTextColor, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 6),
+        ...rawProducts.take(4).map((item) {
+          if (item is! Map) {
+            return const SizedBox.shrink();
+          }
+          final title = (item['title'] as String? ?? 'Product').trim();
+          final quantity = (item['quantity'] as num?)?.toInt() ?? 1;
+          final lineTotal =
+              (item['lineTotalSar'] as num?)?.toDouble() ??
+              (item['priceSar'] as num?)?.toDouble() ??
+              0;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              '$title x$quantity - SAR ${lineTotal.toStringAsFixed(2)}',
+              style: const TextStyle(color: Color(0xFF6B7C93)),
+            ),
+          );
+        }),
+        if (rawProducts.length > 4)
+          Text(
+            '+ ${rawProducts.length - 4} more item(s)',
+            style: const TextStyle(color: Color(0xFF6B7C93)),
+          ),
+      ],
+    );
+  }
+}
+
 String _prettyLabel(String value) {
   if (value.isEmpty) return 'Unknown';
   return value[0].toUpperCase() + value.substring(1).toLowerCase();
@@ -294,11 +376,7 @@ BoxDecoration _cardDecoration() {
     borderRadius: BorderRadius.circular(22),
     border: Border.all(color: const Color(0xFFD8E3EE)),
     boxShadow: const [
-      BoxShadow(
-        color: Color(0x140E0820),
-        blurRadius: 16,
-        offset: Offset(0, 8),
-      ),
+      BoxShadow(color: Color(0x140E0820), blurRadius: 16, offset: Offset(0, 8)),
     ],
   );
 }

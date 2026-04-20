@@ -19,16 +19,16 @@ class _SplashScreenState extends State<SplashScreen> {
   List<Map<String, String>> splashData = [
     {
       "text": "Welcome to Souqplus, Let’s shop!",
-      "image": "assets/images/splash_11.png"
+      "image": "assets/images/splash_11.png",
     },
     {
       "text": "We help people shop confidently \naround KSA",
-      "image": "assets/images/splash_22.png"
+      "image": "assets/images/splash_22.png",
     },
     {
       "text":
           "We show the easy verified way to shop. \nJust stay at home with us",
-      "image": "assets/images/splash_33.png"
+      "image": "assets/images/splash_33.png",
     },
   ];
 
@@ -88,10 +88,7 @@ class _SplashScreenState extends State<SplashScreen> {
                       // ✅ UPDATED BUTTON
                       ElevatedButton(
                         onPressed: () {
-                          Navigator.pushNamed(
-                            context,
-                            SignInScreen.routeName,
-                          );
+                          Navigator.pushNamed(context, SignInScreen.routeName);
                         },
                         child: const Text("Continue"),
                       ),

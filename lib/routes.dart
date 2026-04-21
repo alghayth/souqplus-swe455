@@ -5,6 +5,7 @@ import 'package:souqplus/screens/cart/checkout_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_alerts_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_categories_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_records_screen.dart';
+import 'package:souqplus/screens/admin_dashboard/admin_drivers_screen.dart';
 import 'package:souqplus/screens/complete_profile/complete_profile_screen.dart';
 import 'package:souqplus/screens/details/details_screen.dart';
 import 'package:souqplus/screens/favorite/favorite_screen.dart';
@@ -58,6 +59,7 @@ final Map<String, WidgetBuilder> routes = {
   AdminPaymentsScreen.routeName: (context) => const AdminPaymentsScreen(),
   AdminAlertsScreen.routeName: (context) => const AdminAlertsScreen(),
   AdminRecordsScreen.routeName: (context) => const AdminRecordsScreen(),
+  AdminDriversScreen.routeName: (context) => const AdminDriversScreen(),
 
   // OTHER SCREENS
   ForgotPasswordScreen.routeName: (context) => const ForgotPasswordScreen(),

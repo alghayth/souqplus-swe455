@@ -413,7 +413,7 @@ async function assertAdminCallable(request) {
   if (!hasAdminRole(userData)) {
     throw new HttpsError(
         "permission-denied",
-        "Only admins can remove product posts.",
+        "Only admins can perform this action.",
     );
   }
 }
@@ -1156,6 +1156,38 @@ exports.removeProductPostAsAdmin = onCall(async (request) => {
 
   await productRef.delete();
   return {success: true, productId};
+});
+
+exports.removeDriverAsAdmin = onCall(async (request) => {
+  await assertAdminCallable(request);
+
+  const driverId = String(
+      request.data && request.data.driverId || "",
+  ).trim();
+  if (!driverId) {
+    throw new HttpsError(
+        "invalid-argument",
+        "driverId is required.",
+    );
+  }
+
+  const driverRef = sellerOnboardingDb.collection("drivers").doc(driverId);
+  const driverSnapshot = await driverRef.get();
+  if (!driverSnapshot.exists) {
+    throw new HttpsError("not-found", "Driver was not found.");
+  }
+
+  await driverRef.delete();
+
+  try {
+    await admin.auth().deleteUser(driverId);
+  } catch (error) {
+    if (!error || error.code !== "auth/user-not-found") {
+      throw error;
+    }
+  }
+
+  return {success: true, driverId};
 });
 
 exports.sendPushOnNotificationCreated = onDocumentCreated(

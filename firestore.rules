@@ -123,5 +123,12 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create, update, delete: if isAdmin();
     }
+
+    match /drivers/{driverId} {
+      allow create: if isSignedIn() && request.auth.uid == driverId;
+      allow read: if (isSignedIn() && request.auth.uid == driverId) || isAdmin();
+      allow update: if (isSignedIn() && request.auth.uid == driverId) || isAdmin();
+      allow delete: if isAdmin();
+    }
   }
 }

@@ -5,6 +5,7 @@ import 'package:souqplus/components/page_header_title.dart';
 import 'package:souqplus/constants.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_alerts_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_categories_screen.dart';
+import 'package:souqplus/screens/admin_dashboard/admin_drivers_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_orders_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_payments_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_records_screen.dart';
@@ -262,6 +263,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             label: 'Categories',
                             stream: _adminOrderService.categoriesStream(),
                           ),
+                          _LiveCountChip(
+                            label: 'Drivers',
+                            stream: _adminOrderService.driversStream(),
+                          ),
                         ],
                       ),
                     ],
@@ -291,6 +296,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         onTap: () => Navigator.pushNamed(
                           context,
                           AdminCategoriesScreen.routeName,
+                        ),
+                      ),
+                      AdminFeatureCard(
+                        icon: Icons.local_shipping_rounded,
+                        title: 'Drivers',
+                        description:
+                            'See every registered driver in a separate admin panel.',
+                        onTap: () => Navigator.pushNamed(
+                          context,
+                          AdminDriversScreen.routeName,
                         ),
                       ),
                       AdminFeatureCard(

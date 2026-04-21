@@ -30,6 +30,10 @@ class AdminOrderService {
     return db.collection('categories').snapshots();
   }
 
+  Stream<QuerySnapshot<Map<String, dynamic>>> driversStream() {
+    return db.collection('drivers').snapshots();
+  }
+
   static String normalizeOrderStatus(String value) {
     final status = value.trim().toLowerCase();
     return switch (status) {
@@ -74,5 +78,12 @@ class AdminOrderService {
       'removeProductPostAsAdmin',
     );
     return callable.call({'productId': productId});
+  }
+
+  Future<void> removeDriver({required String driverId}) {
+    final callable = FirebaseFunctions.instance.httpsCallable(
+      'removeDriverAsAdmin',
+    );
+    return callable.call({'driverId': driverId});
   }
 }

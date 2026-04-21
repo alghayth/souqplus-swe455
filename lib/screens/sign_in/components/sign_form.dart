@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_dashboard_screen.dart';
+import 'package:souqplus/screens/driver_registration/driver_home_screen.dart';
 import 'package:souqplus/screens/init_screen.dart';
 import 'package:souqplus/services/admin_access_service.dart';
 import 'package:souqplus/services/auth_form_validator.dart';
@@ -70,8 +71,22 @@ class _SignFormState extends State<SignForm> {
       }
 
       final adminAccess = await _adminAccessService.checkCurrentUserAdmin();
-      await PushTokenService.saveUserFcmToken();
+      final isDriver = adminAccess.isAdmin
+          ? false
+          : await _authLoginService.isCurrentUserDriver();
+      await PushTokenService.saveUserFcmToken(
+        collectionPath: isDriver ? 'drivers' : 'users',
+      );
       if (!mounted) return;
+
+      final String destinationRoute;
+      if (adminAccess.isAdmin) {
+        destinationRoute = AdminDashboardScreen.routeName;
+      } else if (isDriver) {
+        destinationRoute = DriverHomeScreen.routeName;
+      } else {
+        destinationRoute = InitScreen.routeName;
+      }
 
       ScaffoldMessenger.of(
         context,
@@ -79,9 +94,7 @@ class _SignFormState extends State<SignForm> {
 
       Navigator.pushNamedAndRemoveUntil(
         context,
-        adminAccess.isAdmin
-            ? AdminDashboardScreen.routeName
-            : InitScreen.routeName,
+        destinationRoute,
         (route) => false,
       );
     } on FirebaseAuthException catch (exception) {

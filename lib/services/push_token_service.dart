@@ -9,7 +9,9 @@ import 'package:souqplus/main.dart';
 class PushTokenService {
   static StreamSubscription<String>? _tokenRefreshSubscription;
 
-  static Future<void> saveUserFcmToken() async {
+  static Future<void> saveUserFcmToken({
+    String collectionPath = 'users',
+  }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       debugPrint('FCM TOKEN: no signed-in user yet.');
@@ -32,7 +34,7 @@ class PushTokenService {
         return;
       }
 
-      final userRef = db.collection('users').doc(user.uid);
+      final userRef = db.collection(collectionPath).doc(user.uid);
 
       await userRef.set({
         'latestFcmToken': token,

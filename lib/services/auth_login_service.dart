@@ -31,6 +31,18 @@ class AuthLoginService {
         status == 'disabled';
   }
 
+  Future<bool> isCurrentUserDriver() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+
+    final driverDoc = await db.collection('drivers').doc(user.uid).get();
+    final data = driverDoc.data();
+    if (data == null) return false;
+
+    final role = (data['role'] as String? ?? '').trim().toLowerCase();
+    return role == 'driver';
+  }
+
   String mapAuthError(FirebaseAuthException exception) {
     switch (exception.code) {
       case 'user-not-found':

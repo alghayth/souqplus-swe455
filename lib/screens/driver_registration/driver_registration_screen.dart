@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:souqplus/main.dart';
+import 'package:souqplus/screens/driver_registration/driver_home_screen.dart';
 
 import '../../constants.dart';
 
@@ -54,18 +56,20 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
     setState(() => _loading = true);
 
     try {
+      final email = emailController.text.trim().toLowerCase();
       // 🔥 Firebase Auth
       UserCredential userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(
-            email: emailController.text.trim(),
+            email: email,
             password: passwordController.text.trim(),
           );
 
       String uid = userCredential.user!.uid;
 
       // 🔥 Firestore
-      await FirebaseFirestore.instance.collection('drivers').doc(uid).set({
-        'email': emailController.text.trim(),
+      await db.collection('drivers').doc(uid).set({
+        'uid': uid,
+        'email': email,
         'fullName': nameController.text.trim(),
         'phone': phoneController.text.trim(),
         'carPlate': plateController.text.trim(),
@@ -73,6 +77,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
         'carBrand': brandController.text.trim(),
         'role': 'driver',
         'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
       });
 
       if (!mounted) return;
@@ -81,8 +86,29 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
         const SnackBar(content: Text("Driver registered successfully")),
       );
 
-      Navigator.pop(context);
-    } catch (e) {
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        DriverHomeScreen.routeName,
+        (route) => false,
+      );
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      final message = e.code == 'email-already-in-use'
+          ? 'This email is already registered. Please sign in.'
+          : e.message ?? 'Registration failed';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } on FirebaseException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not save driver profile: ${e.message ?? e.code}',
+          ),
+        ),
+      );
+    } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,

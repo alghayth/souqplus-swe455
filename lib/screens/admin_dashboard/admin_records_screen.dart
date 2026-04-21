@@ -19,8 +19,13 @@ class AdminRecordsScreen extends StatelessWidget {
       child: Scaffold(
         backgroundColor: const Color.fromARGB(255, 253, 246, 210),
         appBar: AppBar(
+          backgroundColor: kSecondaryColor,
           title: const PageHeaderTitle('Database'),
           bottom: const TabBar(
+            labelColor: Colors.white,
+            unselectedLabelColor: Color(0xCCEAF5FC),
+            indicatorColor: kPrimaryColor,
+            indicatorWeight: 3,
             tabs: [
               Tab(text: 'Users'),
               Tab(text: 'Products'),
@@ -50,6 +55,41 @@ class _UsersRecordsTab extends StatefulWidget {
 class _UsersRecordsTabState extends State<_UsersRecordsTab> {
   String? _updatingUserId;
 
+  Future<void> _confirmSetBlocked({
+    required QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    required bool blocked,
+  }) async {
+    final data = doc.data();
+    final email = _text(data, 'email', fallback: 'this user');
+    final shouldUpdate = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(blocked ? 'Block User' : 'Unblock User'),
+        content: Text(
+          blocked
+              ? 'Are you sure you want to block $email? This user will not be able to sign in.'
+              : 'Are you sure you want to unblock $email? This user will be able to sign in again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(
+              blocked ? 'Block' : 'Unblock',
+              style: TextStyle(color: blocked ? Colors.red : Colors.green),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldUpdate != true) return;
+    await _setBlocked(doc: doc, blocked: blocked);
+  }
+
   Future<void> _setBlocked({
     required QueryDocumentSnapshot<Map<String, dynamic>> doc,
     required bool blocked,
@@ -59,14 +99,7 @@ class _UsersRecordsTabState extends State<_UsersRecordsTab> {
       await widget.service.updateUserBlocked(userId: doc.id, blocked: blocked);
       if (!mounted) return;
       final email = _text(doc.data(), 'email', fallback: 'This user');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            blocked ? '$email has been blocked.' : '$email has been unblocked.',
-          ),
-          backgroundColor: blocked ? Colors.red : Colors.green,
-        ),
-      );
+      await _showAccessUpdatedMessage(email: email, blocked: blocked);
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -75,6 +108,29 @@ class _UsersRecordsTabState extends State<_UsersRecordsTab> {
     } finally {
       if (mounted) setState(() => _updatingUserId = null);
     }
+  }
+
+  Future<void> _showAccessUpdatedMessage({
+    required String email,
+    required bool blocked,
+  }) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(blocked ? 'User Blocked' : 'User Unblocked'),
+        content: Text(
+          blocked
+              ? '$email has been blocked successfully.'
+              : '$email has been unblocked successfully.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -120,7 +176,10 @@ class _UsersRecordsTabState extends State<_UsersRecordsTab> {
               ? ElevatedButton.icon(
                   onPressed: isUpdating
                       ? null
-                      : () => _setBlocked(doc: doc, blocked: !isBlocked),
+                      : () => _confirmSetBlocked(
+                          doc: doc,
+                          blocked: !isBlocked,
+                        ),
                   icon: isUpdating
                       ? const SizedBox(
                           width: 16,

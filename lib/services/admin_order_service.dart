@@ -73,6 +73,24 @@ class AdminOrderService {
     }, SetOptions(merge: true));
   }
 
+  Future<void> updateDriverBlocked({
+    required String driverId,
+    required bool blocked,
+  }) {
+    final adminUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    return db.collection('drivers').doc(driverId).set({
+      'isBlocked': blocked,
+      'updatedAt': FieldValue.serverTimestamp(),
+      if (blocked) ...{
+        'blockedAt': FieldValue.serverTimestamp(),
+        'blockedBy': adminUid,
+      } else ...{
+        'unblockedAt': FieldValue.serverTimestamp(),
+        'unblockedBy': adminUid,
+      },
+    }, SetOptions(merge: true));
+  }
+
   Future<void> removeProductPost({required String productId}) {
     final callable = FirebaseFunctions.instance.httpsCallable(
       'removeProductPostAsAdmin',

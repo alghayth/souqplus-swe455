@@ -19,6 +19,9 @@ class NotificationsScreen extends StatelessWidget {
         actions: [
           if (user != null)
             TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+              ),
               onPressed: () => NotificationService.instance.markAllAsRead(
                 user.uid,
               ),

@@ -16,6 +16,93 @@ class AdminDriversScreen extends StatefulWidget {
 class _AdminDriversScreenState extends State<AdminDriversScreen> {
   final AdminOrderService _service = const AdminOrderService();
   String? _removingDriverId;
+  String? _updatingDriverId;
+
+  Future<void> _confirmSetDriverBlocked({
+    required QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    required bool blocked,
+  }) async {
+    final data = doc.data();
+    final driverName = _driverName(data);
+    final email = _text(data, 'email', fallback: 'this driver');
+    final shouldUpdate = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(blocked ? 'Block Driver' : 'Unblock Driver'),
+        content: Text(
+          blocked
+              ? 'Are you sure you want to block $driverName?\n\n$email will not be able to sign in as a driver.'
+              : 'Are you sure you want to unblock $driverName?\n\n$email will be able to sign in as a driver again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(
+              blocked ? 'Block' : 'Unblock',
+              style: TextStyle(color: blocked ? Colors.red : Colors.green),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldUpdate != true) return;
+    await _setDriverBlocked(
+      doc: doc,
+      blocked: blocked,
+      driverName: driverName,
+    );
+  }
+
+  Future<void> _setDriverBlocked({
+    required QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    required bool blocked,
+    required String driverName,
+  }) async {
+    setState(() => _updatingDriverId = doc.id);
+    try {
+      await _service.updateDriverBlocked(driverId: doc.id, blocked: blocked);
+      if (!mounted) return;
+      await _showDriverAccessUpdatedMessage(
+        driverName: driverName,
+        blocked: blocked,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update driver access: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _updatingDriverId = null);
+    }
+  }
+
+  Future<void> _showDriverAccessUpdatedMessage({
+    required String driverName,
+    required bool blocked,
+  }) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(blocked ? 'Driver Blocked' : 'Driver Unblocked'),
+        content: Text(
+          blocked
+              ? '$driverName has been blocked successfully.'
+              : '$driverName has been unblocked successfully.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _confirmRemoveDriver(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
@@ -110,8 +197,11 @@ class _AdminDriversScreenState extends State<AdminDriversScreen> {
             itemBuilder: (context, index) {
               final doc = docs[index];
               final data = doc.data();
+              final isBlocked = _isBlocked(data);
               return _DriverCard(
                 isRemoving: _removingDriverId == doc.id,
+                isUpdating: _updatingDriverId == doc.id,
+                isBlocked: isBlocked,
                 name: _driverName(data),
                 email: _text(data, 'email', fallback: 'No email'),
                 phone: _text(data, 'phone', fallback: 'Not set'),
@@ -119,6 +209,10 @@ class _AdminDriversScreenState extends State<AdminDriversScreen> {
                 carBrand: _text(data, 'carBrand', fallback: 'Not set'),
                 carModel: _text(data, 'carModel', fallback: 'Not set'),
                 uid: doc.id,
+                onSetBlocked: () => _confirmSetDriverBlocked(
+                  doc: doc,
+                  blocked: !isBlocked,
+                ),
                 onRemove: () => _confirmRemoveDriver(doc),
               );
             },
@@ -132,6 +226,8 @@ class _AdminDriversScreenState extends State<AdminDriversScreen> {
 class _DriverCard extends StatelessWidget {
   const _DriverCard({
     required this.isRemoving,
+    required this.isUpdating,
+    required this.isBlocked,
     required this.name,
     required this.email,
     required this.phone,
@@ -139,10 +235,13 @@ class _DriverCard extends StatelessWidget {
     required this.carBrand,
     required this.carModel,
     required this.uid,
+    required this.onSetBlocked,
     required this.onRemove,
   });
 
   final bool isRemoving;
+  final bool isUpdating;
+  final bool isBlocked;
   final String name;
   final String email;
   final String phone;
@@ -150,6 +249,7 @@ class _DriverCard extends StatelessWidget {
   final String carBrand;
   final String carModel;
   final String uid;
+  final VoidCallback onSetBlocked;
   final VoidCallback onRemove;
 
   @override
@@ -180,13 +280,15 @@ class _DriverCard extends StatelessWidget {
                   vertical: 5,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.12),
+                  color: (isBlocked ? Colors.red : Colors.green).withValues(
+                    alpha: 0.12,
+                  ),
                   borderRadius: BorderRadius.circular(999),
                 ),
-                child: const Text(
-                  'Driver',
+                child: Text(
+                  isBlocked ? 'Blocked' : 'Driver',
                   style: TextStyle(
-                    color: Colors.green,
+                    color: isBlocked ? Colors.red : Colors.green,
                     fontWeight: FontWeight.w800,
                     fontSize: 12,
                   ),
@@ -205,7 +307,38 @@ class _DriverCard extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: isRemoving ? null : onRemove,
+              onPressed: isUpdating || isRemoving ? null : onSetBlocked,
+              icon: isUpdating
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(
+                      isBlocked
+                          ? Icons.lock_open_rounded
+                          : Icons.block_rounded,
+                    ),
+              label: Text(
+                isUpdating
+                    ? 'Updating...'
+                    : isBlocked
+                        ? 'Unblock Driver'
+                        : 'Block Driver',
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isBlocked ? Colors.green : Colors.red,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: const Color(0xFFE8EEF5),
+                disabledForegroundColor: const Color(0xFF6B7C93),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: isRemoving || isUpdating ? null : onRemove,
               icon: isRemoving
                   ? const SizedBox(
                       width: 16,
@@ -282,6 +415,14 @@ class _FirebaseMessage extends StatelessWidget {
 String _driverName(Map<String, dynamic> data) {
   final fullName = _text(data, 'fullName', fallback: '');
   return fullName.isEmpty ? 'Registered Driver' : fullName;
+}
+
+bool _isBlocked(Map<String, dynamic> data) {
+  final status = (data['status'] as String? ?? '').trim().toLowerCase();
+  return data['isBlocked'] == true ||
+      data['blocked'] == true ||
+      status == 'blocked' ||
+      status == 'disabled';
 }
 
 String _text(

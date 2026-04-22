@@ -49,13 +49,31 @@ class _DriverSignInScreenState extends State<DriverSignInScreen> {
           .doc(uid)
           .get();
 
-      if (!doc.exists || doc.data()?['role'] != 'driver') {
+      final data = doc.data();
+      if (!doc.exists || data?['role'] != 'driver') {
         await FirebaseAuth.instance.signOut();
 
         if (!mounted) return;
 
         setState(() {
           _error = "This account is not registered as a driver";
+          _loading = false;
+        });
+        return;
+      }
+
+      final status = (data?['status'] as String? ?? '').trim().toLowerCase();
+      final isBlocked = data?['isBlocked'] == true ||
+          data?['blocked'] == true ||
+          status == 'blocked' ||
+          status == 'disabled';
+      if (isBlocked) {
+        await FirebaseAuth.instance.signOut();
+
+        if (!mounted) return;
+
+        setState(() {
+          _error = "This driver account has been blocked by the admin";
           _loading = false;
         });
         return;

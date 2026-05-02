@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:souqplus/components/page_header_title.dart';
 import 'package:souqplus/main.dart';
+import 'package:souqplus/screens/profile/order_tracking_map_screen.dart';
+import 'package:souqplus/services/admin_order_service.dart';
 
 class PurchaseHistoryScreen extends StatelessWidget {
   const PurchaseHistoryScreen({super.key});
@@ -127,10 +129,7 @@ class PurchaseHistoryScreen extends StatelessWidget {
                                 true
                             ? items.first['title'].toString().trim()
                             : 'Order #${order.id.substring(0, 6).toUpperCase()}';
-                    final status = (data['status'] as String?)?.trim().isNotEmpty ==
-                            true
-                        ? (data['status'] as String).trim()
-                        : 'pending';
+                    final status = _normalizedOrderStatus(data);
                     final paymentStatus =
                         (data['paymentStatus'] as String?)?.trim().isNotEmpty ==
                                 true
@@ -202,10 +201,8 @@ class PurchaseHistoryScreen extends StatelessWidget {
                             runSpacing: 8,
                             children: [
                               _StatusChip(
-                                label: 'Order: ${status.toUpperCase()}',
-                                color: status.toLowerCase() == 'pending'
-                                    ? const Color(0xFFF59E0B)
-                                    : const Color(0xFF2563EB),
+                                label: 'Order: ${_statusLabel(status)}',
+                                color: _statusColor(status),
                               ),
                               _StatusChip(
                                 label:
@@ -215,6 +212,24 @@ class PurchaseHistoryScreen extends StatelessWidget {
                                     : const Color(0xFFB45309),
                               ),
                             ],
+                          ),
+                          const SizedBox(height: 14),
+                          _OrderProgressTracker(status: status),
+                          const SizedBox(height: 14),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) =>
+                                        OrderTrackingMapScreen(orderId: order.id),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.map_outlined),
+                              label: const Text('Track Order On Map'),
+                            ),
                           ),
                           if (deliveryAddress.isNotEmpty) ...[
                             const SizedBox(height: 12),
@@ -306,6 +321,34 @@ class PurchaseHistoryScreen extends StatelessWidget {
     final month = date.month.toString().padLeft(2, '0');
     return '$day/$month/${date.year}';
   }
+
+  static String _normalizedOrderStatus(Map<String, dynamic> data) {
+    final rawStatus = (data['status'] as String? ?? '').trim();
+    if (rawStatus.isEmpty) {
+      return 'ordered';
+    }
+
+    final normalized = AdminOrderService.normalizeOrderStatus(rawStatus);
+    return normalized.isEmpty ? 'ordered' : normalized;
+  }
+
+  static Color _statusColor(String status) {
+    return switch (status) {
+      'ordered' => const Color(0xFFF59E0B),
+      'in transit' => const Color(0xFF2563EB),
+      'delivered' => const Color(0xFF16A34A),
+      _ => const Color(0xFF6B7280),
+    };
+  }
+
+  static String _statusLabel(String status) {
+    return switch (status) {
+      'ordered' => 'ORDERED',
+      'in transit' => 'IN TRANSIT',
+      'delivered' => 'DELIVERED',
+      _ => status.toUpperCase(),
+    };
+  }
 }
 
 class _SummaryChip extends StatelessWidget {
@@ -357,6 +400,122 @@ class _StatusChip extends StatelessWidget {
           fontSize: 12,
         ),
       ),
+    );
+  }
+}
+
+class _OrderProgressTracker extends StatelessWidget {
+  const _OrderProgressTracker({required this.status});
+
+  final String status;
+
+  static const List<String> _steps = [
+    'ordered',
+    'in transit',
+    'delivered',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final currentIndex = _steps.indexOf(status);
+    final safeIndex = currentIndex >= 0 ? currentIndex : 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Delivery progress',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF111827),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: List.generate(_steps.length, (index) {
+            final step = _steps[index];
+            final completed = index <= safeIndex;
+            final isLast = index == _steps.length - 1;
+
+            return Expanded(
+              child: Row(
+                children: [
+                  _ProgressStep(
+                    label: PurchaseHistoryScreen._statusLabel(step),
+                    completed: completed,
+                    isCurrent: index == safeIndex,
+                    color: PurchaseHistoryScreen._statusColor(step),
+                  ),
+                  if (!isLast)
+                    Expanded(
+                      child: Container(
+                        height: 3,
+                        margin: const EdgeInsets.symmetric(horizontal: 6),
+                        decoration: BoxDecoration(
+                          color: completed
+                              ? PurchaseHistoryScreen._statusColor(step)
+                              : const Color(0xFFD7E0EA),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          }),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProgressStep extends StatelessWidget {
+  const _ProgressStep({
+    required this.label,
+    required this.completed,
+    required this.isCurrent,
+    required this.color,
+  });
+
+  final String label;
+  final bool completed;
+  final bool isCurrent;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: isCurrent ? 30 : 24,
+          height: isCurrent ? 30 : 24,
+          decoration: BoxDecoration(
+            color: completed ? color : Colors.white,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: completed ? color : const Color(0xFFD7E0EA),
+              width: 2,
+            ),
+          ),
+          child: Icon(
+            completed ? Icons.check : Icons.circle_outlined,
+            size: 14,
+            color: completed ? Colors.white : const Color(0xFF9CA3AF),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w600,
+            color: completed ? const Color(0xFF111827) : const Color(0xFF6B7280),
+          ),
+        ),
+      ],
     );
   }
 }

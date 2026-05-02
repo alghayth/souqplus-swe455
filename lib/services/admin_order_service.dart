@@ -64,16 +64,43 @@ class AdminOrderService {
     });
   }
 
+  Future<void> updateDriverLiveLocation({
+    required List<String> orderIds,
+    required double latitude,
+    required double longitude,
+  }) async {
+    if (orderIds.isEmpty) return;
+
+    final batch = db.batch();
+    final driverLocation = <String, dynamic>{
+      'latitude': latitude,
+      'longitude': longitude,
+      'geoPoint': GeoPoint(latitude, longitude),
+    };
+
+    for (final orderId in orderIds) {
+      final orderRef = db.collection('orders').doc(orderId);
+      batch.update(orderRef, {
+        'driverCurrentLocation': driverLocation,
+        'driverLocationUpdatedAt': FieldValue.serverTimestamp(),
+      });
+    }
+
+    await batch.commit();
+  }
+
   Future<void> assignDriverToOrder({
     required String orderId,
     required String driverId,
     required String driverName,
     required String driverEmail,
+    required String driverPhoneNumber,
   }) {
     return db.collection('orders').doc(orderId).update({
       'driverId': driverId,
       'driverName': driverName,
       'driverEmail': driverEmail,
+      'driverPhoneNumber': driverPhoneNumber,
       'assignedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });

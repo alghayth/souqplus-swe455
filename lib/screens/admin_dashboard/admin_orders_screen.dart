@@ -29,6 +29,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
         driverId: driver.id,
         driverName: driver.name,
         driverEmail: driver.email,
+        driverPhoneNumber: driver.phoneNumber,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -313,7 +314,7 @@ class _ReadOnlyStatusSection extends StatelessWidget {
       children: [
         const Text(
           'Order Status',
-          style: const TextStyle(
+          style: TextStyle(
             color: kTextColor,
             fontWeight: FontWeight.w700,
           ),
@@ -489,12 +490,14 @@ class _DriverAssignmentOption {
     required this.id,
     required this.name,
     required this.email,
+    required this.phoneNumber,
     required this.isBlocked,
   });
 
   final String id;
   final String name;
   final String email;
+  final String phoneNumber;
   final bool isBlocked;
 
   String get label => email.isEmpty ? name : '$name - $email';
@@ -511,11 +514,13 @@ class _DriverAssignmentOption {
 
     final name = (data['fullName'] as String? ?? '').trim();
     final email = (data['email'] as String? ?? '').trim();
+    final phoneNumber = (data['phoneNumber'] as String? ?? '').trim();
 
     return _DriverAssignmentOption(
       id: doc.id,
       name: name.isEmpty ? 'Registered Driver' : name,
       email: email,
+      phoneNumber: phoneNumber,
       isBlocked: isBlocked,
     );
   }

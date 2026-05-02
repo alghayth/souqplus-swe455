@@ -131,12 +131,22 @@ service cloud.firestore {
             isAssignedDriver(resource.data)
             && request.resource.data.diff(resource.data)
               .affectedKeys()
-              .hasOnly(['status', 'updatedAt'])
-            && request.resource.data.status in [
-              'ordered',
-              'in transit',
-              'delivered'
-            ]
+              .hasOnly([
+                'status',
+                'updatedAt',
+                'driverCurrentLocation',
+                'driverLocationUpdatedAt'
+              ])
+            && (
+              !request.resource.data.diff(resource.data)
+                .affectedKeys()
+                .hasAny(['status'])
+              || request.resource.data.status in [
+                'ordered',
+                'in transit',
+                'delivered'
+              ]
+            )
           )
         );
       allow delete: if false;

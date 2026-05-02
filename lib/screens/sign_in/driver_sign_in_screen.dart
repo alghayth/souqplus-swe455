@@ -2,7 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:souqplus/main.dart';
 
 import '../driver_registration/driver_home_screen.dart';
 import '../driver_registration/driver_registration_screen.dart';
@@ -44,10 +44,7 @@ class _DriverSignInScreenState extends State<DriverSignInScreen> {
       String uid = userCredential.user!.uid;
 
       // 🔥 Driver check
-      final doc = await FirebaseFirestore.instance
-          .collection('drivers')
-          .doc(uid)
-          .get();
+      final doc = await db.collection('drivers').doc(uid).get();
 
       final data = doc.data();
       if (!doc.exists || data?['role'] != 'driver') {

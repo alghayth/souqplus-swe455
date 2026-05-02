@@ -18,6 +18,15 @@ class AdminOrderService {
     return db.collection('orders').snapshots();
   }
 
+  Stream<QuerySnapshot<Map<String, dynamic>>> driverOrdersStream({
+    required String driverId,
+  }) {
+    return db
+        .collection('orders')
+        .where('driverId', isEqualTo: driverId)
+        .snapshots();
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> productsStream() {
     return db.collection('products').snapshots();
   }
@@ -51,6 +60,21 @@ class AdminOrderService {
   }) {
     return db.collection('orders').doc(orderId).update({
       field: value,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> assignDriverToOrder({
+    required String orderId,
+    required String driverId,
+    required String driverName,
+    required String driverEmail,
+  }) {
+    return db.collection('orders').doc(orderId).update({
+      'driverId': driverId,
+      'driverName': driverName,
+      'driverEmail': driverEmail,
+      'assignedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }

@@ -121,8 +121,6 @@ class _SignFormState extends State<SignForm> {
 
   @override
   Widget build(BuildContext context) {
-    final password = _passwordController.text;
-
     return Form(
       key: _formKey,
       child: Column(
@@ -178,29 +176,8 @@ class _SignFormState extends State<SignForm> {
                 tooltip: _obscurePassword ? 'Show Password' : 'Hide Password',
               ),
               counterText: '',
-              helperText: '8-20 chars with uppercase, lowercase, and number',
             ),
           ),
-          if (password.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            _buildPasswordRule('At least 8 characters', password.length >= 8),
-            _buildPasswordRule(
-              'No more than 20 characters',
-              password.length <= AuthFormValidator.passwordMaxLength,
-            ),
-            _buildPasswordRule(
-              'Contains an uppercase letter',
-              AuthFormValidator.hasUppercase(password),
-            ),
-            _buildPasswordRule(
-              'Contains a lowercase letter',
-              AuthFormValidator.hasLowercase(password),
-            ),
-            _buildPasswordRule(
-              'Contains a number',
-              AuthFormValidator.hasNumber(password),
-            ),
-          ],
           const SizedBox(height: 20),
           Row(
             children: [
@@ -235,35 +212,6 @@ class _SignFormState extends State<SignForm> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Text('Continue'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPasswordRule(String text, bool isValid) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        children: [
-          Icon(
-            isValid ? Icons.check_circle : Icons.cancel,
-            color: isValid
-                ? Colors.green
-                : const Color.fromARGB(255, 153, 42, 34),
-            size: 18,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: TextStyle(
-                color: isValid
-                    ? Colors.green
-                    : const Color.fromARGB(255, 153, 42, 34),
-                fontSize: 13,
-              ),
-            ),
           ),
         ],
       ),

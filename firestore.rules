@@ -52,6 +52,11 @@ service cloud.firestore {
         );
     }
 
+    function isAssignedDriver(orderData) {
+      return isSignedIn()
+        && orderData.driverId == request.auth.uid;
+    }
+
     match /users/{uid} {
       allow read: if isOwner(uid) || isAdmin();
       allow create: if isOwner(uid)
@@ -113,9 +118,27 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid;
       allow read: if isSignedIn()
-        && (resource.data.userId == request.auth.uid || isAdmin());
+        && (
+          resource.data.userId == request.auth.uid
+          || isAdmin()
+          || isAssignedDriver(resource.data)
+        );
       allow update: if isSignedIn()
-        && (resource.data.userId == request.auth.uid || isAdmin());
+        && (
+          resource.data.userId == request.auth.uid
+          || isAdmin()
+          || (
+            isAssignedDriver(resource.data)
+            && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly(['status', 'updatedAt'])
+            && request.resource.data.status in [
+              'ordered',
+              'in transit',
+              'delivered'
+            ]
+          )
+        );
       allow delete: if false;
     }
 

@@ -334,6 +334,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final userData = userDoc.data() ?? <String, dynamic>{};
     final deliveryLocationDetails =
         (_selectedLocationDetails ?? deliveryAddress).trim();
+    final pickupDetails = await _readPickupDetails(purchasedItems);
     final products = purchasedItems
         .map(
           (item) => <String, dynamic>{
@@ -369,9 +370,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       'total': _cartTotal,
       'deliveryAddress': deliveryAddress,
       'deliveryLocationDetails': deliveryLocationDetails,
+      'pickupLocationDetails': pickupDetails.addressText,
+      'pickupAddressText': pickupDetails.addressText,
       'status': 'ordered',
       'createdAt': FieldValue.serverTimestamp(),
     };
+
+    if (pickupDetails.latitude != null && pickupDetails.longitude != null) {
+      data['pickupAddress'] = <String, dynamic>{
+        'details': pickupDetails.addressText,
+        'latitude': pickupDetails.latitude,
+        'longitude': pickupDetails.longitude,
+        'geoPoint': GeoPoint(
+          pickupDetails.latitude!,
+          pickupDetails.longitude!,
+        ),
+      };
+    }
 
     if (_selectedLatLng != null) {
       data['buyerDeliveryLocation'] = <String, dynamic>{
@@ -484,6 +499,43 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     for (final item in purchasedItems) {
       CartService.instance.removeProduct(item.product);
     }
+  }
+
+  Future<_PickupDetails> _readPickupDetails(List<Cart> purchasedItems) async {
+    if (purchasedItems.isEmpty) {
+      return const _PickupDetails(addressText: 'Pickup address unavailable');
+    }
+
+    final firstProductId = purchasedItems.first.product.firestoreId?.trim() ?? '';
+    if (firstProductId.isEmpty) {
+      return const _PickupDetails(addressText: 'Pickup address unavailable');
+    }
+
+    try {
+      final productDoc = await db.collection('products').doc(firstProductId).get();
+      final productData = productDoc.data() ?? <String, dynamic>{};
+      final addressText =
+          (productData['pickupLocationDetails'] as String? ?? '').trim();
+      final geoPoint = productData['pickupAddress'];
+
+      if (geoPoint is GeoPoint) {
+        return _PickupDetails(
+          addressText: addressText.isEmpty
+              ? 'Seller pickup location'
+              : addressText,
+          latitude: geoPoint.latitude,
+          longitude: geoPoint.longitude,
+        );
+      }
+
+      if (addressText.isNotEmpty) {
+        return _PickupDetails(addressText: addressText);
+      }
+    } catch (_) {
+      // Keep checkout working even if pickup metadata is missing.
+    }
+
+    return const _PickupDetails(addressText: 'Pickup address unavailable');
   }
 
   Future<void> _showOrderPlacedSuccess() async {
@@ -873,4 +925,16 @@ class _SavedOrderResult {
 
   final String orderId;
   final List<String> productIds;
+}
+
+class _PickupDetails {
+  const _PickupDetails({
+    required this.addressText,
+    this.latitude,
+    this.longitude,
+  });
+
+  final String addressText;
+  final double? latitude;
+  final double? longitude;
 }

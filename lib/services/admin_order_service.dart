@@ -48,7 +48,7 @@ class AdminOrderService {
     return switch (status) {
       'ordered' || 'pending' || 'confirmed' => 'ordered',
       'in transit' || 'in_transit' || 'shipped' => 'in transit',
-      'delivered' => 'delivered',
+      'delivered' || 'complete' || 'completed' => 'delivered',
       _ => status,
     };
   }

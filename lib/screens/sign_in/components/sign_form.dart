@@ -74,6 +74,15 @@ class _SignFormState extends State<SignForm> {
       final isDriver = adminAccess.isAdmin
           ? false
           : await _authLoginService.isCurrentUserDriver();
+      if (isDriver && await _authLoginService.isCurrentDriverBlocked()) {
+        await FirebaseAuth.instance.signOut();
+        if (!mounted) return;
+        setState(
+          () => _formMessage =
+              'This driver account has been blocked by the admin.',
+        );
+        return;
+      }
       await PushTokenService.saveUserFcmToken(
         collectionPath: isDriver ? 'drivers' : 'users',
       );

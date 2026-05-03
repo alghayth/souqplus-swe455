@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:souqplus/main.dart';
+import 'package:souqplus/services/auth_login_service.dart';
 
 import '../driver_registration/driver_home_screen.dart';
 import '../driver_registration/driver_registration_screen.dart';
@@ -35,11 +36,11 @@ class _DriverSignInScreenState extends State<DriverSignInScreen> {
 
     try {
       // 🔥 Firebase Auth
-      UserCredential userCredential =
-          await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: emailController.text.trim(),
-        password: passwordController.text.trim(),
-      );
+      UserCredential userCredential = await FirebaseAuth.instance
+          .signInWithEmailAndPassword(
+            email: emailController.text.trim(),
+            password: passwordController.text.trim(),
+          );
 
       String uid = userCredential.user!.uid;
 
@@ -59,12 +60,7 @@ class _DriverSignInScreenState extends State<DriverSignInScreen> {
         return;
       }
 
-      final status = (data?['status'] as String? ?? '').trim().toLowerCase();
-      final isBlocked = data?['isBlocked'] == true ||
-          data?['blocked'] == true ||
-          status == 'blocked' ||
-          status == 'disabled';
-      if (isBlocked) {
+      if (data != null && AuthLoginService.isBlockedData(data)) {
         await FirebaseAuth.instance.signOut();
 
         if (!mounted) return;
@@ -84,7 +80,6 @@ class _DriverSignInScreenState extends State<DriverSignInScreen> {
         DriverHomeScreen.routeName,
         (route) => false,
       );
-
     } on FirebaseAuthException {
       setState(() {
         _error = "Invalid email or password";
@@ -146,9 +141,7 @@ class _DriverSignInScreenState extends State<DriverSignInScreen> {
                         if (!value.contains("@")) return "Enter valid email";
                         return null;
                       },
-                      decoration: const InputDecoration(
-                        labelText: "Email",
-                      ),
+                      decoration: const InputDecoration(labelText: "Email"),
                     ),
 
                     const SizedBox(height: 16),
@@ -171,9 +164,7 @@ class _DriverSignInScreenState extends State<DriverSignInScreen> {
                         }
                         return null;
                       },
-                      decoration: const InputDecoration(
-                        labelText: "Password",
-                      ),
+                      decoration: const InputDecoration(labelText: "Password"),
                     ),
 
                     const SizedBox(height: 8),
@@ -187,10 +178,7 @@ class _DriverSignInScreenState extends State<DriverSignInScreen> {
                         },
                         child: const Text(
                           "Forgot Password?",
-                          style: TextStyle(
-                            color: Colors.blue,
-                            fontSize: 13,
-                          ),
+                          style: TextStyle(color: Colors.blue, fontSize: 13),
                         ),
                       ),
                     ),
@@ -199,10 +187,7 @@ class _DriverSignInScreenState extends State<DriverSignInScreen> {
 
                     // ERROR
                     if (_error != null)
-                      Text(
-                        _error!,
-                        style: const TextStyle(color: Colors.red),
-                      ),
+                      Text(_error!, style: const TextStyle(color: Colors.red)),
 
                     const SizedBox(height: 16),
 

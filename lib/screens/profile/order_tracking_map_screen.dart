@@ -7,10 +7,7 @@ import 'package:souqplus/main.dart';
 import 'package:souqplus/services/admin_order_service.dart';
 
 class OrderTrackingMapScreen extends StatelessWidget {
-  const OrderTrackingMapScreen({
-    super.key,
-    required this.orderId,
-  });
+  const OrderTrackingMapScreen({super.key, required this.orderId});
 
   final String orderId;
 
@@ -47,7 +44,8 @@ class OrderTrackingMapScreen extends StatelessWidget {
           final deliveryAddress = _readDeliveryAddress(data);
           final lastUpdated = _readDriverLocationUpdatedAt(data);
           final assignedDriverId = (data['driverId'] as String? ?? '').trim();
-          final assignedDriverName = (data['driverName'] as String? ?? '').trim();
+          final assignedDriverName = (data['driverName'] as String? ?? '')
+              .trim();
           final assignedDriverPhone =
               (data['driverPhoneNumber'] as String? ?? '').trim();
           final initialCenter =
@@ -58,30 +56,21 @@ class OrderTrackingMapScreen extends StatelessWidget {
                 point: buyerPoint,
                 width: 36,
                 height: 36,
-                child: const _MapMarker(
-                  emoji: '🏠',
-                  color: Color(0xFF1D4ED8),
-                ),
+                child: const _MapMarker(emoji: '🏠', color: Color(0xFF1D4ED8)),
               ),
             if (pickupPoint != null)
               Marker(
                 point: pickupPoint,
                 width: 36,
                 height: 36,
-                child: const _MapMarker(
-                  emoji: '🏪',
-                  color: Color(0xFFF59E0B),
-                ),
+                child: const _MapMarker(emoji: '🏪', color: Color(0xFFF59E0B)),
               ),
             if (driverPoint != null)
               Marker(
                 point: driverPoint,
                 width: 36,
                 height: 36,
-                child: const _MapMarker(
-                  emoji: '🏍️',
-                  color: Color(0xFF16A34A),
-                ),
+                child: const _MapMarker(emoji: '🏍️', color: Color(0xFF16A34A)),
               ),
           ];
 
@@ -136,12 +125,14 @@ class OrderTrackingMapScreen extends StatelessWidget {
                             'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                         userAgentPackageName: 'com.example.souqplus',
                       ),
-                      PolylineLayer(polylines: _buildPolylines(
-                        status: status,
-                        pickupPoint: pickupPoint,
-                        driverPoint: driverPoint,
-                        buyerPoint: buyerPoint,
-                      )),
+                      PolylineLayer(
+                        polylines: _buildPolylines(
+                          status: status,
+                          pickupPoint: pickupPoint,
+                          driverPoint: driverPoint,
+                          buyerPoint: buyerPoint,
+                        ),
+                      ),
                       MarkerLayer(markers: markers),
                     ],
                   ),
@@ -246,13 +237,14 @@ class OrderTrackingMapScreen extends StatelessWidget {
   }
 
   static String _readPickupAddress(Map<String, dynamic> data) {
-    final pickupLocationDetails = (data['pickupLocationDetails'] as String? ?? '')
-        .trim();
+    final pickupLocationDetails =
+        (data['pickupLocationDetails'] as String? ?? '').trim();
     if (pickupLocationDetails.isNotEmpty) {
       return pickupLocationDetails;
     }
 
-    final pickupAddressText = (data['pickupAddressText'] as String? ?? '').trim();
+    final pickupAddressText = (data['pickupAddressText'] as String? ?? '')
+        .trim();
     if (pickupAddressText.isNotEmpty) {
       return pickupAddressText;
     }
@@ -293,7 +285,8 @@ class OrderTrackingMapScreen extends StatelessWidget {
   static String _statusDescription(String status) {
     return switch (status) {
       'ordered' => 'Your order is confirmed and waiting for delivery progress.',
-      'in transit' => 'Your driver is on the way and the live map will keep updating.',
+      'in transit' =>
+        'Your driver is on the way and the live map will keep updating.',
       'delivered' => 'This order has been delivered to the selected address.',
       _ => 'Tracking is available while this order is being delivered.',
     };
@@ -334,16 +327,8 @@ List<Polyline> _buildPolylines({
   if (points.length < 2) return const [];
 
   return [
-    Polyline(
-      points: points,
-      color: const Color(0xAA16A34A),
-      strokeWidth: 10,
-    ),
-    Polyline(
-      points: points,
-      color: const Color(0xFF16A34A),
-      strokeWidth: 6,
-    ),
+    Polyline(points: points, color: const Color(0xAA16A34A), strokeWidth: 10),
+    Polyline(points: points, color: const Color(0xFF16A34A), strokeWidth: 6),
   ];
 }
 
@@ -356,21 +341,9 @@ class _TrackingLegend extends StatelessWidget {
       spacing: 8,
       runSpacing: 8,
       children: [
-        _LegendChip(
-          emoji: '🏪',
-          label: 'Seller',
-          color: Color(0xFFF59E0B),
-        ),
-        _LegendChip(
-          emoji: '🏍️',
-          label: 'Driver',
-          color: Color(0xFF16A34A),
-        ),
-        _LegendChip(
-          emoji: '🏠',
-          label: 'Buyer',
-          color: Color(0xFF1D4ED8),
-        ),
+        _LegendChip(emoji: '🏪', label: 'Seller', color: Color(0xFFF59E0B)),
+        _LegendChip(emoji: '🏍️', label: 'Driver', color: Color(0xFF16A34A)),
+        _LegendChip(emoji: '🏠', label: 'Buyer', color: Color(0xFF1D4ED8)),
       ],
     );
   }
@@ -402,10 +375,7 @@ class _LegendChip extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             label,
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.w700,
-            ),
+            style: TextStyle(color: color, fontWeight: FontWeight.w700),
           ),
         ],
       ),
@@ -579,10 +549,7 @@ class _AssignedDriverSection extends StatelessWidget {
 }
 
 class _MapMarker extends StatelessWidget {
-  const _MapMarker({
-    required this.emoji,
-    required this.color,
-  });
+  const _MapMarker({required this.emoji, required this.color});
 
   final String emoji;
   final Color color;
@@ -603,10 +570,7 @@ class _MapMarker extends StatelessWidget {
         ],
       ),
       alignment: Alignment.center,
-      child: Text(
-        emoji,
-        style: const TextStyle(fontSize: 16),
-      ),
+      child: Text(emoji, style: const TextStyle(fontSize: 16)),
     );
   }
 }

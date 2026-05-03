@@ -15,7 +15,7 @@ class AdminOrdersScreen extends StatefulWidget {
 
 class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
   final AdminOrderService _adminOrderService = const AdminOrderService();
-  String _selectedStatus = 'All';
+  String _selectedStatus = 'pending';
   String? _updatingOrderId;
 
   Future<void> _assignDriver({
@@ -66,11 +66,17 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final drivers = snapshot.data?.docs
+          final allDrivers =
+              snapshot.data?.docs
                   .map((doc) => _DriverAssignmentOption.fromDoc(doc))
-                  .where((driver) => !driver.isBlocked)
                   .toList() ??
               const <_DriverAssignmentOption>[];
+          final activeDrivers = allDrivers
+              .where((driver) => !driver.isBlocked)
+              .toList();
+          final driversById = {
+            for (final driver in allDrivers) driver.id: driver,
+          };
 
           return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
             stream: _adminOrderService.ordersStream(),
@@ -86,27 +92,30 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
 
               final docs = [...?orderSnapshot.data?.docs];
               docs.sort((a, b) {
+                final aWorkflow = _adminWorkflowStatus(
+                  a.data(),
+                  driversById: driversById,
+                );
+                final bWorkflow = _adminWorkflowStatus(
+                  b.data(),
+                  driversById: driversById,
+                );
+                final statusCompare = _workflowSortIndex(
+                  aWorkflow,
+                ).compareTo(_workflowSortIndex(bWorkflow));
+                if (statusCompare != 0) return statusCompare;
+
                 final aMillis = _createdAtMillis(a.data());
                 final bMillis = _createdAtMillis(b.data());
                 return bMillis.compareTo(aMillis);
               });
-              final statuses = <String>{'All', 'ordered', 'in transit'};
-              for (final doc in docs) {
-                final status = AdminOrderService.normalizeOrderStatus(
-                  (doc.data()['status'] as String?) ?? '',
-                );
-                if (status.isNotEmpty && status != 'delivered') {
-                  statuses.add(status);
-                }
-              }
-              final filteredDocs = _selectedStatus == 'All'
-                  ? docs
-                  : docs.where((doc) {
-                      final status = AdminOrderService.normalizeOrderStatus(
-                        (doc.data()['status'] as String?) ?? '',
-                      );
-                      return status == _selectedStatus.toLowerCase();
-                    }).toList();
+              final filteredDocs = docs.where((doc) {
+                return _adminWorkflowStatus(
+                      doc.data(),
+                      driversById: driversById,
+                    ) ==
+                    _selectedStatus;
+              }).toList();
 
               return ListView(
                 padding: const EdgeInsets.all(16),
@@ -125,27 +134,10 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                     style: TextStyle(color: Color(0xFF6B7C93)),
                   ),
                   const SizedBox(height: 16),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: statuses.map((status) {
-                        final selected = status == _selectedStatus;
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: ChoiceChip(
-                            label: Text(_prettyLabel(status)),
-                            selected: selected,
-                            selectedColor: kSecondaryColor,
-                            labelStyle: TextStyle(
-                              color: selected ? Colors.white : kTextColor,
-                              fontWeight: FontWeight.w700,
-                            ),
-                            onSelected: (_) =>
-                                setState(() => _selectedStatus = status),
-                          ),
-                        );
-                      }).toList(),
-                    ),
+                  _WorkflowStatusSelector(
+                    selectedStatus: _selectedStatus,
+                    onChanged: (status) =>
+                        setState(() => _selectedStatus = status),
                   ),
                   const SizedBox(height: 16),
                   if (filteredDocs.isEmpty)
@@ -160,10 +152,10 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                   else
                     ...filteredDocs.map((doc) {
                       final data = doc.data();
-                      final buyerName =
-                          (data['buyerName'] as String? ?? '').trim();
-                      final buyerEmail =
-                          (data['buyerEmail'] as String? ?? '').trim();
+                      final buyerName = (data['buyerName'] as String? ?? '')
+                          .trim();
+                      final buyerEmail = (data['buyerEmail'] as String? ?? '')
+                          .trim();
                       final buyerPhone =
                           (data['buyerPhoneNumber'] as String? ?? '').trim();
                       final deliveryAddress =
@@ -172,14 +164,25 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                           (data['driverId'] as String? ?? '').trim();
                       final assignedDriverName =
                           (data['driverName'] as String? ?? '').trim();
+                      final assignedDriver = driversById[assignedDriverId];
                       final total =
                           (data['totalPriceSar'] as num?)?.toDouble() ??
                           (data['total'] as num?)?.toDouble() ??
                           0;
-                      final orderStatus =
-                          ((data['status'] as String?) ?? 'pending').trim();
-                      final normalizedOrderStatus =
-                          AdminOrderService.normalizeOrderStatus(orderStatus);
+                      final rawOrderStatus =
+                          AdminOrderService.normalizeOrderStatus(
+                            (data['status'] as String?) ?? '',
+                          );
+                      final driverIssue = _driverAccessIssue(
+                        data,
+                        driver: assignedDriver,
+                        orderStatus: rawOrderStatus,
+                      );
+                      final normalizedOrderStatus = _adminWorkflowStatus(
+                        data,
+                        driversById: driversById,
+                      );
+                      final isDelivered = rawOrderStatus == 'delivered';
 
                       return Container(
                         margin: const EdgeInsets.only(bottom: 12),
@@ -259,16 +262,29 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                               ),
                             ],
                             const SizedBox(height: 14),
-                            _DriverAssignmentSection(
-                              selectedDriverId: assignedDriverId,
-                              assignedDriverName: assignedDriverName,
-                              drivers: drivers,
-                              busy: _updatingOrderId == doc.id,
-                              onChanged: (driver) => _assignDriver(
-                                orderId: doc.id,
-                                driver: driver,
+                            if (isDelivered)
+                              _AssignedDriverNameSection(
+                                driverName: assignedDriverName,
+                              )
+                            else
+                              _DriverAssignmentSection(
+                                selectedDriverId: assignedDriverId,
+                                assignedDriverName: driverIssue == null
+                                    ? assignedDriverName
+                                    : '',
+                                drivers: activeDrivers,
+                                busy: _updatingOrderId == doc.id,
+                                onChanged: (driver) => _assignDriver(
+                                  orderId: doc.id,
+                                  driver: driver,
+                                ),
                               ),
-                            ),
+                            if (driverIssue != null &&
+                                (rawOrderStatus == 'in transit' ||
+                                    rawOrderStatus == 'delivered')) ...[
+                              const SizedBox(height: 10),
+                              _DriverAccessWarning(issue: driverIssue),
+                            ],
                             const SizedBox(height: 14),
                             _ReadOnlyStatusSection(
                               value: normalizedOrderStatus,
@@ -303,7 +319,9 @@ class _ReadOnlyStatusSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = switch (value) {
+      'pending' => Colors.orange,
       'ordered' => Colors.orange,
+      'assigned' => kSecondaryColor,
       'in transit' => Colors.blue,
       'delivered' => Colors.green,
       _ => const Color(0xFF6B7C93),
@@ -314,10 +332,7 @@ class _ReadOnlyStatusSection extends StatelessWidget {
       children: [
         const Text(
           'Order Status',
-          style: TextStyle(
-            color: kTextColor,
-            fontWeight: FontWeight.w700,
-          ),
+          style: TextStyle(color: kTextColor, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 6),
         Container(
@@ -332,10 +347,7 @@ class _ReadOnlyStatusSection extends StatelessWidget {
               Container(
                 width: 10,
                 height: 10,
-                decoration: BoxDecoration(
-                  color: color,
-                  shape: BoxShape.circle,
-                ),
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
               const SizedBox(width: 10),
               Text(
@@ -349,6 +361,70 @@ class _ReadOnlyStatusSection extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _WorkflowStatusSelector extends StatelessWidget {
+  const _WorkflowStatusSelector({
+    required this.selectedStatus,
+    required this.onChanged,
+  });
+
+  final String selectedStatus;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: _adminWorkflowStatuses.map((status) {
+        final selected = status == selectedStatus;
+        final isLast = status == _adminWorkflowStatuses.last;
+
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(right: isLast ? 0 : 6),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => onChanged(status),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                height: 46,
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                decoration: BoxDecoration(
+                  color: selected ? kSecondaryColor : const Color(0xFFFFFBFF),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: selected ? kSecondaryColor : const Color(0xFFD6C7DE),
+                  ),
+                  boxShadow: selected
+                      ? const [
+                          BoxShadow(
+                            color: Color(0x1F0E3A6D),
+                            blurRadius: 10,
+                            offset: Offset(0, 4),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    _prettyLabel(status),
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: selected ? Colors.white : kTextColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 }
@@ -370,17 +446,16 @@ class _DriverAssignmentSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasSelectedDriver = drivers.any((driver) => driver.id == selectedDriverId);
+    final hasSelectedDriver = drivers.any(
+      (driver) => driver.id == selectedDriverId,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
           'Assigned Driver',
-          style: TextStyle(
-            color: kTextColor,
-            fontWeight: FontWeight.w700,
-          ),
+          style: TextStyle(color: kTextColor, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 6),
         if (drivers.isEmpty)
@@ -430,6 +505,80 @@ class _DriverAssignmentSection extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _AssignedDriverNameSection extends StatelessWidget {
+  const _AssignedDriverNameSection({required this.driverName});
+
+  final String driverName;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Delivered By',
+          style: TextStyle(color: kTextColor, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEAF5FC),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Text(
+            driverName.isEmpty ? 'Driver not available' : driverName,
+            style: const TextStyle(
+              color: kTextColor,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DriverAccessWarning extends StatelessWidget {
+  const _DriverAccessWarning({required this.issue});
+
+  final _DriverAccessIssue issue;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF3CD),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFF59E0B)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.warning_amber_rounded,
+            color: Color(0xFFB45309),
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              issue.message,
+              style: const TextStyle(
+                color: Color(0xFF92400E),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -507,7 +656,8 @@ class _DriverAssignmentOption {
   ) {
     final data = doc.data();
     final status = (data['status'] as String? ?? '').trim().toLowerCase();
-    final isBlocked = data['isBlocked'] == true ||
+    final isBlocked =
+        data['isBlocked'] == true ||
         data['blocked'] == true ||
         status == 'blocked' ||
         status == 'disabled';
@@ -528,7 +678,85 @@ class _DriverAssignmentOption {
 
 String _prettyLabel(String value) {
   if (value.isEmpty) return 'Unknown';
+  if (value == 'in transit') return 'In Transit';
   return value[0].toUpperCase() + value.substring(1).toLowerCase();
+}
+
+const List<String> _adminWorkflowStatuses = [
+  'pending',
+  'assigned',
+  'in transit',
+  'delivered',
+];
+
+String _adminWorkflowStatus(
+  Map<String, dynamic> data, {
+  required Map<String, _DriverAssignmentOption> driversById,
+}) {
+  final normalizedStatus = AdminOrderService.normalizeOrderStatus(
+    (data['status'] as String?) ?? '',
+  );
+  if (normalizedStatus == 'delivered' || normalizedStatus == 'in transit') {
+    return normalizedStatus;
+  }
+
+  final driverId = (data['driverId'] as String? ?? '').trim();
+  final driverName = (data['driverName'] as String? ?? '').trim();
+  final driver = driversById[driverId];
+  final hasActiveDriver = driver != null && !driver.isBlocked;
+  if (hasActiveDriver || (driverId.isEmpty && driverName.isNotEmpty)) {
+    return 'assigned';
+  }
+
+  return 'pending';
+}
+
+_DriverAccessIssue? _driverAccessIssue(
+  Map<String, dynamic> data, {
+  required _DriverAssignmentOption? driver,
+  required String orderStatus,
+}) {
+  final driverId = (data['driverId'] as String? ?? '').trim();
+  final driverName = (data['driverName'] as String? ?? '').trim();
+  if (driverId.isEmpty && driverName.isEmpty) {
+    if (orderStatus == 'in transit') {
+      return const _DriverAccessIssue(
+        'This in-transit order has no assigned driver. Contact the driver and reassign the order.',
+      );
+    }
+    return null;
+  }
+
+  final name = driverName.isNotEmpty
+      ? driverName
+      : (driver?.name ?? 'This driver');
+  final actionMessage = orderStatus == 'in transit'
+      ? ' Contact the driver and reassign the order.'
+      : '';
+
+  if (driver == null && driverId.isNotEmpty) {
+    return _DriverAccessIssue(
+      '$name was removed and is no longer available as a driver.$actionMessage',
+    );
+  }
+  if (driver?.isBlocked == true) {
+    return _DriverAccessIssue(
+      '$name is blocked and no longer has driver access.$actionMessage',
+    );
+  }
+
+  return null;
+}
+
+class _DriverAccessIssue {
+  const _DriverAccessIssue(this.message);
+
+  final String message;
+}
+
+int _workflowSortIndex(String status) {
+  final index = _adminWorkflowStatuses.indexOf(status);
+  return index == -1 ? _adminWorkflowStatuses.length : index;
 }
 
 BoxDecoration _cardDecoration() {

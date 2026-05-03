@@ -50,7 +50,7 @@ final Map<String, WidgetBuilder> routes = {
   SignInScreen.routeName: (context) => const SignInScreen(),
 
   // DRIVER LOGIN
-  DriverSignInScreen.routeName: (context) => const SignInScreen(),
+  DriverSignInScreen.routeName: (context) => const DriverSignInScreen(),
 
   // ADMIN
   AdminDashboardScreen.routeName: (context) => const AdminDashboardScreen(),

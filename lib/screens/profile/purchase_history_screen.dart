@@ -39,7 +39,10 @@ class PurchaseHistoryScreen extends StatelessWidget {
                 }
 
                 final docs = snapshot.data!.docs
-                    .where((doc) => (doc.data()['userId'] as String? ?? '') == user.uid)
+                    .where(
+                      (doc) =>
+                          (doc.data()['userId'] as String? ?? '') == user.uid,
+                    )
                     .where(
                       (doc) =>
                           (doc.data()['paymentStatus'] as String? ?? '')
@@ -48,10 +51,9 @@ class PurchaseHistoryScreen extends StatelessWidget {
                           'paid',
                     )
                     .where(
-                      (doc) =>
-                          (doc.data()['paymentIntentId'] as String? ?? '')
-                              .trim()
-                              .isNotEmpty,
+                      (doc) => (doc.data()['paymentIntentId'] as String? ?? '')
+                          .trim()
+                          .isNotEmpty,
                     )
                     .toList();
                 docs.sort((a, b) {
@@ -126,15 +128,15 @@ class PurchaseHistoryScreen extends StatelessWidget {
                     final orderTitle = items.isEmpty
                         ? 'Order #${order.id.substring(0, 6).toUpperCase()}'
                         : items.first['title']?.toString().trim().isNotEmpty ==
-                                true
-                            ? items.first['title'].toString().trim()
-                            : 'Order #${order.id.substring(0, 6).toUpperCase()}';
+                              true
+                        ? items.first['title'].toString().trim()
+                        : 'Order #${order.id.substring(0, 6).toUpperCase()}';
                     final status = _normalizedOrderStatus(data);
                     final paymentStatus =
                         (data['paymentStatus'] as String?)?.trim().isNotEmpty ==
-                                true
-                            ? (data['paymentStatus'] as String).trim()
-                            : 'unknown';
+                            true
+                        ? (data['paymentStatus'] as String).trim()
+                        : 'unknown';
                     final deliveryAddress =
                         (data['deliveryAddress'] as String? ?? '').trim();
                     final total = _readTotal(data);
@@ -222,8 +224,9 @@ class PurchaseHistoryScreen extends StatelessWidget {
                               onPressed: () {
                                 Navigator.of(context).push(
                                   MaterialPageRoute<void>(
-                                    builder: (_) =>
-                                        OrderTrackingMapScreen(orderId: order.id),
+                                    builder: (_) => OrderTrackingMapScreen(
+                                      orderId: order.id,
+                                    ),
                                   ),
                                 );
                               },
@@ -235,33 +238,34 @@ class PurchaseHistoryScreen extends StatelessWidget {
                             const SizedBox(height: 12),
                             Text(
                               'Delivery: $deliveryAddress',
-                              style: const TextStyle(
-                                color: Color(0xFF4B5563),
-                              ),
+                              style: const TextStyle(color: Color(0xFF4B5563)),
                             ),
                           ],
                           if (items.isNotEmpty) ...[
                             const SizedBox(height: 12),
                             const Text(
                               'Items',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
+                              style: TextStyle(fontWeight: FontWeight.w700),
                             ),
                             const SizedBox(height: 8),
-                            ...items.take(3).map(
-                              (item) => Padding(
-                                padding: const EdgeInsets.only(bottom: 6),
-                                child: Text(
-                                  item['title']?.toString().trim().isNotEmpty ==
-                                          true
-                                      ? item['title'].toString().trim()
-                                      : 'Product',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                            ...items
+                                .take(3)
+                                .map(
+                                  (item) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 6),
+                                    child: Text(
+                                      item['title']
+                                                  ?.toString()
+                                                  .trim()
+                                                  .isNotEmpty ==
+                                              true
+                                          ? item['title'].toString().trim()
+                                          : 'Product',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
                             if (items.length > 3)
                               Text(
                                 '+${items.length - 3} more items',
@@ -376,10 +380,7 @@ class _SummaryChip extends StatelessWidget {
 }
 
 class _StatusChip extends StatelessWidget {
-  const _StatusChip({
-    required this.label,
-    required this.color,
-  });
+  const _StatusChip({required this.label, required this.color});
 
   final String label;
   final Color color;
@@ -409,11 +410,7 @@ class _OrderProgressTracker extends StatelessWidget {
 
   final String status;
 
-  static const List<String> _steps = [
-    'ordered',
-    'in transit',
-    'delivered',
-  ];
+  static const List<String> _steps = ['ordered', 'in transit', 'delivered'];
 
   @override
   Widget build(BuildContext context) {
@@ -512,7 +509,9 @@ class _ProgressStep extends StatelessWidget {
           style: TextStyle(
             fontSize: 10,
             fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w600,
-            color: completed ? const Color(0xFF111827) : const Color(0xFF6B7280),
+            color: completed
+                ? const Color(0xFF111827)
+                : const Color(0xFF6B7280),
           ),
         ),
       ],

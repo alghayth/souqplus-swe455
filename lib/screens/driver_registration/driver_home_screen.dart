@@ -1,4 +1,4 @@
-// ignore_for_file: file_names
+// ignore_for_file: file_names, unused_element
 
 import 'dart:async';
 
@@ -9,6 +9,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart' as latlng;
 import 'package:souqplus/components/page_header_title.dart';
+import 'package:souqplus/components/shared_tracking_session_map.dart';
 import 'package:souqplus/constants.dart';
 import 'package:souqplus/screens/sign_in/sign_in_screen.dart';
 import 'package:souqplus/services/admin_order_service.dart';
@@ -24,14 +25,20 @@ class DriverHomeScreen extends StatefulWidget {
 }
 
 class _DriverHomeScreenState extends State<DriverHomeScreen> {
+  static const double _maxReliableGpsAccuracyMeters = 80;
+
   final AdminOrderService _orderService = const AdminOrderService();
   bool _isLoggingOut = false;
   final Set<String> _startedOrderIds = <String>{};
   StreamSubscription<Position>? _positionSubscription;
   Set<String> _trackedOrderIds = <String>{};
+  final Map<String, List<LatLngPoint>> _trackingTrailByOrderId =
+      <String, List<LatLngPoint>>{};
   Position? _lastSyncedPosition;
   Position? _liveDriverPosition;
   DateTime? _lastLocationSyncAt;
+  Position? _lastTrailSamplePosition;
+  DateTime? _lastTrailSampleAt;
   bool _isTrackingLocation = false;
   bool _locationPermissionDenied = false;
   String _selectedDeliveryFilter = 'ordered';
@@ -103,10 +110,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
       await _positionSubscription?.cancel();
       _positionSubscription = null;
       if (mounted) {
-        setState(() => _isTrackingLocation = false);
+        setState(() {
+          _isTrackingLocation = false;
+          _trackingTrailByOrderId.clear();
+        });
       }
       return;
     }
+
+    _trackingTrailByOrderId.removeWhere(
+      (orderId, _) => !_trackedOrderIds.contains(orderId),
+    );
 
     final hasPermission = await _ensureLocationPermission();
     if (!hasPermission) {
@@ -172,6 +186,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   }) async {
     if (_trackedOrderIds.isEmpty) return;
 
+    if (!force &&
+        position.accuracy.isFinite &&
+        position.accuracy > _maxReliableGpsAccuracyMeters) {
+      debugPrint(
+        'Backend: Skipped unreliable GPS point accuracy=${position.accuracy}m',
+      );
+      return;
+    }
+
     if (mounted) {
       setState(() => _liveDriverPosition = position);
     } else {
@@ -194,12 +217,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
       }
     }
 
+    _appendLiveTrailPoint(position);
+
     try {
       await _orderService.updateDriverLiveLocation(
         orderIds: _trackedOrderIds.toList(),
         latitude: position.latitude,
         longitude: position.longitude,
       );
+      await _appendRemoteTrailPoint(position, now, force: force);
       _lastSyncedPosition = position;
       _lastLocationSyncAt = now;
     } catch (error) {
@@ -208,6 +234,74 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
         SnackBar(content: Text(_friendlyUpdateErrorMessage(error))),
       );
     }
+  }
+
+  void _appendLiveTrailPoint(Position position) {
+    final nextPoint = _positionToLatLng(position);
+    if (nextPoint == null) return;
+
+    final updatedTrailByOrderId = <String, List<LatLngPoint>>{};
+    for (final orderId in _trackedOrderIds) {
+      final existingTrail = List<LatLngPoint>.from(
+        _trackingTrailByOrderId[orderId] ?? const <LatLngPoint>[],
+      );
+      if (existingTrail.isEmpty ||
+          _distanceBetweenPoints(existingTrail.last, nextPoint) >= 1.5) {
+        existingTrail.add(nextPoint);
+      } else {
+        existingTrail[existingTrail.length - 1] = nextPoint;
+      }
+
+      if (existingTrail.length > 250) {
+        existingTrail.removeRange(0, existingTrail.length - 250);
+      }
+      updatedTrailByOrderId[orderId] = existingTrail;
+    }
+
+    if (mounted) {
+      setState(() {
+        _trackingTrailByOrderId
+          ..clear()
+          ..addAll(updatedTrailByOrderId);
+      });
+    } else {
+      _trackingTrailByOrderId
+        ..clear()
+        ..addAll(updatedTrailByOrderId);
+    }
+  }
+
+  Future<void> _appendRemoteTrailPoint(
+    Position position,
+    DateTime now, {
+    required bool force,
+  }) async {
+    if (!force &&
+        _lastTrailSamplePosition != null &&
+        _lastTrailSampleAt != null) {
+      final distance = Geolocator.distanceBetween(
+        _lastTrailSamplePosition!.latitude,
+        _lastTrailSamplePosition!.longitude,
+        position.latitude,
+        position.longitude,
+      );
+      final elapsedSeconds = now.difference(_lastTrailSampleAt!).inSeconds;
+      if (distance < 5 && elapsedSeconds < 4) {
+        return;
+      }
+    }
+
+    await _orderService.appendDriverTrackingPoints(
+      orderIds: _trackedOrderIds.toList(),
+      latitude: position.latitude,
+      longitude: position.longitude,
+      recordedAtMs: now.millisecondsSinceEpoch,
+      heading: position.heading.isFinite ? position.heading : null,
+      speed: position.speed.isFinite ? position.speed : null,
+      accuracy: position.accuracy.isFinite ? position.accuracy : null,
+    );
+    _lastTrailSamplePosition = position;
+    _lastTrailSampleAt = now;
   }
 
   @override
@@ -912,6 +1006,11 @@ class _DriverOrderInfoScreenState extends State<_DriverOrderInfoScreen> {
     final driverPoint =
         _readLatLng(data['driverCurrentLocation']) ??
         widget.fallbackDriverPoint;
+    final driverUpdatedAt = _readTimestamp(data['driverLocationUpdatedAt']);
+    final routeTargetPoint = status == 'ordered' ? pickupPoint : dropOffPoint;
+    final routeTargetLabel = status == 'ordered'
+        ? 'Seller pickup'
+        : 'Buyer drop-off';
 
     return Scaffold(
       backgroundColor: const Color(0xFFFDF6D2),
@@ -991,14 +1090,15 @@ class _DriverOrderInfoScreenState extends State<_DriverOrderInfoScreen> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  _DriverRouteMap(
-                    key: ValueKey(
-                      '${driverPoint?.latitude ?? 0}-${driverPoint?.longitude ?? 0}-$status-${widget.orderId}',
-                    ),
-                    status: status,
-                    pickupPoint: pickupPoint,
-                    driverPoint: driverPoint,
-                    dropOffPoint: dropOffPoint,
+                  SharedTrackingSessionMap(
+                    sessionId: widget.orderId,
+                    pickupPoint: _toMapPoint(pickupPoint),
+                    buyerPoint: _toMapPoint(dropOffPoint),
+                    initialDriverPoint: _toMapPoint(driverPoint),
+                    initialDriverUpdatedAt: driverUpdatedAt,
+                    routeTargetPoint: _toMapPoint(routeTargetPoint),
+                    routeTargetLabel: routeTargetLabel,
+                    height: 220,
                   ),
                 ],
               ),
@@ -1091,45 +1191,84 @@ class _DriverOrderInfoScreenState extends State<_DriverOrderInfoScreen> {
   }
 }
 
-class _DriverRouteMap extends StatelessWidget {
+class _DriverRouteMap extends StatefulWidget {
   const _DriverRouteMap({
-    super.key,
-    required this.status,
     required this.pickupPoint,
     required this.driverPoint,
     required this.dropOffPoint,
+    required this.trailPoints,
   });
 
-  final String status;
   final LatLngPoint? pickupPoint;
   final LatLngPoint? driverPoint;
   final LatLngPoint? dropOffPoint;
+  final List<LatLngPoint> trailPoints;
+
+  @override
+  State<_DriverRouteMap> createState() => _DriverRouteMapState();
+}
+
+class _DriverRouteMapState extends State<_DriverRouteMap> {
+  late final MapController _mapController;
+
+  @override
+  void initState() {
+    super.initState();
+    _mapController = MapController();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DriverRouteMap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextDriverPoint = widget.driverPoint;
+    if (nextDriverPoint == null) return;
+
+    final previousDriverPoint = oldWidget.driverPoint;
+    final changed = previousDriverPoint == null ||
+        _distanceBetweenPoints(previousDriverPoint, nextDriverPoint) >= 1;
+    if (!changed) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _mapController.move(
+        latlng.LatLng(nextDriverPoint.latitude, nextDriverPoint.longitude),
+        15,
+      );
+      debugPrint(
+        'UI: Map updated successfully driver-map='
+        '${nextDriverPoint.latitude}, ${nextDriverPoint.longitude}',
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final resolvedCenter =
-        driverPoint ?? pickupPoint ?? dropOffPoint ?? _riyadhCenter;
+        widget.driverPoint ??
+        widget.pickupPoint ??
+        widget.dropOffPoint ??
+        _riyadhCenter;
     final center = latlng.LatLng(
       resolvedCenter.latitude,
       resolvedCenter.longitude,
     );
     final polylinePoints = _buildPolylinePoints();
     final markers = <Marker>[
-      if (pickupPoint != null)
+      if (widget.pickupPoint != null)
         _marker(
-          point: pickupPoint!,
+          point: widget.pickupPoint!,
           emoji: '🏪',
           color: const Color(0xFFF59E0B),
         ),
-      if (driverPoint != null)
+      if (widget.driverPoint != null)
         _marker(
-          point: driverPoint!,
+          point: widget.driverPoint!,
           emoji: '🏍️',
           color: const Color(0xFF16A34A),
         ),
-      if (dropOffPoint != null)
+      if (widget.dropOffPoint != null)
         _marker(
-          point: dropOffPoint!,
+          point: widget.dropOffPoint!,
           emoji: '🏠',
           color: const Color(0xFF1D4ED8),
         ),
@@ -1172,6 +1311,7 @@ class _DriverRouteMap extends StatelessWidget {
             child: SizedBox(
               height: 220,
               child: FlutterMap(
+                mapController: _mapController,
                 options: MapOptions(initialCenter: center, initialZoom: 14),
                 children: [
                   TileLayer(
@@ -1200,9 +1340,9 @@ class _DriverRouteMap extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          Text(
-            _routeLabel(status),
-            style: const TextStyle(
+          const Text(
+            'Live trail updates as the driver moves.',
+            style: TextStyle(
               color: Color(0xFF166534),
               fontWeight: FontWeight.w700,
             ),
@@ -1213,33 +1353,22 @@ class _DriverRouteMap extends StatelessWidget {
   }
 
   List<latlng.LatLng> _buildPolylinePoints() {
-    final points = <latlng.LatLng>[];
-    if (status == 'ordered') {
-      if (driverPoint != null && pickupPoint != null) {
-        points.add(
-          latlng.LatLng(driverPoint!.latitude, driverPoint!.longitude),
-        );
-        points.add(
-          latlng.LatLng(pickupPoint!.latitude, pickupPoint!.longitude),
-        );
-      }
-      return points;
-    }
-
-    if (driverPoint != null && dropOffPoint != null) {
-      points.add(latlng.LatLng(driverPoint!.latitude, driverPoint!.longitude));
-      points.add(
-        latlng.LatLng(dropOffPoint!.latitude, dropOffPoint!.longitude),
+    final points = widget.trailPoints
+        .map((point) => latlng.LatLng(point.latitude, point.longitude))
+        .toList();
+    if (widget.driverPoint != null) {
+      final currentPoint = latlng.LatLng(
+        widget.driverPoint!.latitude,
+        widget.driverPoint!.longitude,
       );
+      if (points.isEmpty ||
+          _distanceBetweenLatLng(points.last, currentPoint) >= 1.5) {
+        points.add(currentPoint);
+      } else {
+        points[points.length - 1] = currentPoint;
+      }
     }
     return points;
-  }
-
-  String _routeLabel(String status) {
-    if (status == 'ordered') {
-      return 'Bold green path to the pickup location.';
-    }
-    return 'Bold green path showing your delivery route to the buyer.';
   }
 
   static const LatLngPoint _riyadhCenter = LatLngPoint(
@@ -1378,6 +1507,11 @@ LatLngPoint? _positionToLatLng(Position? position) {
   );
 }
 
+latlng.LatLng? _toMapPoint(LatLngPoint? point) {
+  if (point == null) return null;
+  return latlng.LatLng(point.latitude, point.longitude);
+}
+
 LatLngPoint? _readLatLng(Object? raw) {
   if (raw is GeoPoint) {
     return LatLngPoint(latitude: raw.latitude, longitude: raw.longitude);
@@ -1400,6 +1534,48 @@ LatLngPoint? _readLatLng(Object? raw) {
   }
 
   return LatLngPoint(latitude: latitude, longitude: longitude);
+}
+
+DateTime? _readTimestamp(Object? raw) {
+  if (raw is Timestamp) {
+    return raw.toDate();
+  }
+  return null;
+}
+
+List<LatLngPoint> _readTrackingTrail(
+  Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+) {
+  final points = <LatLngPoint>[];
+  for (final doc in docs) {
+    final data = doc.data();
+    final point = _readLatLng(data);
+    if (point == null) continue;
+    if (points.isEmpty || _distanceBetweenPoints(points.last, point) >= 1) {
+      points.add(point);
+    } else {
+      points[points.length - 1] = point;
+    }
+  }
+  return points;
+}
+
+double _distanceBetweenPoints(LatLngPoint a, LatLngPoint b) {
+  return Geolocator.distanceBetween(
+    a.latitude,
+    a.longitude,
+    b.latitude,
+    b.longitude,
+  );
+}
+
+double _distanceBetweenLatLng(latlng.LatLng a, latlng.LatLng b) {
+  return Geolocator.distanceBetween(
+    a.latitude,
+    a.longitude,
+    b.latitude,
+    b.longitude,
+  );
 }
 
 String _readText(Map<String, dynamic> data, String key) {

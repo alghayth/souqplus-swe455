@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:souqplus/main.dart';
 
 class AdminOrderService {
@@ -24,6 +25,25 @@ class AdminOrderService {
     return db
         .collection('orders')
         .where('driverId', isEqualTo: driverId)
+        .snapshots();
+  }
+
+  Stream<DocumentSnapshot<Map<String, dynamic>>> orderStream({
+    required String orderId,
+  }) {
+    return db.collection('orders').doc(orderId).snapshots();
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> orderTrackingPointsStream({
+    required String orderId,
+    int limit = 250,
+  }) {
+    return db
+        .collection('orders')
+        .doc(orderId)
+        .collection('tracking_points')
+        .orderBy('recordedAtMs')
+        .limitToLast(limit)
         .snapshots();
   }
 
@@ -87,6 +107,46 @@ class AdminOrderService {
     }
 
     await batch.commit();
+    debugPrint(
+      'Backend: Sent location current=($latitude, $longitude) orders=${orderIds.join(",")}',
+    );
+  }
+
+  Future<void> appendDriverTrackingPoints({
+    required List<String> orderIds,
+    required double latitude,
+    required double longitude,
+    required int recordedAtMs,
+    double? heading,
+    double? speed,
+    double? accuracy,
+  }) async {
+    if (orderIds.isEmpty) return;
+
+    final batch = db.batch();
+    for (final orderId in orderIds) {
+      final pointRef = db
+          .collection('orders')
+          .doc(orderId)
+          .collection('tracking_points')
+          .doc();
+      batch.set(pointRef, {
+        'latitude': latitude,
+        'longitude': longitude,
+        'geoPoint': GeoPoint(latitude, longitude),
+        'recordedAtMs': recordedAtMs,
+        'createdAt': FieldValue.serverTimestamp(),
+        if (heading != null) 'heading': heading,
+        if (speed != null) 'speed': speed,
+        if (accuracy != null) 'accuracy': accuracy,
+      });
+    }
+
+    await batch.commit();
+    debugPrint(
+      'Backend: Sent location trail=($latitude, $longitude) '
+      'recordedAtMs=$recordedAtMs orders=${orderIds.join(",")}',
+    );
   }
 
   Future<void> assignDriverToOrder({

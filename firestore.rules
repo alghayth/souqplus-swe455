@@ -150,6 +150,25 @@ service cloud.firestore {
           )
         );
       allow delete: if false;
+
+      match /tracking_points/{pointId} {
+        allow read: if isSignedIn()
+          && (
+            get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid
+            || isAdmin()
+            || isAssignedDriver(
+              get(/databases/$(database)/documents/orders/$(orderId)).data
+            )
+          );
+        allow create: if isSignedIn()
+          && (
+            isAdmin()
+            || isAssignedDriver(
+              get(/databases/$(database)/documents/orders/$(orderId)).data
+            )
+          );
+        allow update, delete: if false;
+      }
     }
 
     match /categories/{categoryId} {

@@ -1,8 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as latlng;
 import 'package:souqplus/components/page_header_title.dart';
+import 'package:souqplus/components/shared_tracking_session_map.dart';
 import 'package:souqplus/main.dart';
 import 'package:souqplus/services/admin_order_service.dart';
 
@@ -40,6 +40,10 @@ class OrderTrackingMapScreen extends StatelessWidget {
           final buyerPoint = _readBuyerPoint(data);
           final driverPoint = _readDriverPoint(data);
           final pickupPoint = _readPickupPoint(data);
+          final routeTargetPoint = status == 'ordered' ? pickupPoint : buyerPoint;
+          final routeTargetLabel = status == 'ordered'
+              ? 'Seller pickup'
+              : 'Buyer drop-off';
           final pickupAddress = _readPickupAddress(data);
           final deliveryAddress = _readDeliveryAddress(data);
           final lastUpdated = _readDriverLocationUpdatedAt(data);
@@ -48,31 +52,6 @@ class OrderTrackingMapScreen extends StatelessWidget {
               .trim();
           final assignedDriverPhone =
               (data['driverPhoneNumber'] as String? ?? '').trim();
-          final initialCenter =
-              driverPoint ?? buyerPoint ?? pickupPoint ?? _defaultCenter;
-          final markers = <Marker>[
-            if (buyerPoint != null)
-              Marker(
-                point: buyerPoint,
-                width: 36,
-                height: 36,
-                child: const _MapMarker(emoji: '🏠', color: Color(0xFF1D4ED8)),
-              ),
-            if (pickupPoint != null)
-              Marker(
-                point: pickupPoint,
-                width: 36,
-                height: 36,
-                child: const _MapMarker(emoji: '🏪', color: Color(0xFFF59E0B)),
-              ),
-            if (driverPoint != null)
-              Marker(
-                point: driverPoint,
-                width: 36,
-                height: 36,
-                child: const _MapMarker(emoji: '🏍️', color: Color(0xFF16A34A)),
-              ),
-          ];
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -98,47 +77,31 @@ class OrderTrackingMapScreen extends StatelessWidget {
                     Text(
                       driverPoint == null
                           ? 'Pickup and drop-off are shown below. Driver location appears when delivery starts.'
-                          : 'The green route shows the live remaining path from the driver to the next stop.',
+                          : 'You are watching the driver real GPS movement in the same shared delivery session.',
                       style: const TextStyle(color: Colors.white),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 16),
-              const _TrackingLegend(),
-              const SizedBox(height: 12),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(22),
-                child: SizedBox(
-                  height: 360,
-                  child: FlutterMap(
-                    key: ValueKey(
-                      '${driverPoint?.latitude ?? 0}-${driverPoint?.longitude ?? 0}-$status-${snapshot.data!.id}',
-                    ),
-                    options: MapOptions(
-                      initialCenter: initialCenter,
-                      initialZoom: driverPoint != null ? 15 : 13,
-                    ),
-                    children: [
-                      TileLayer(
-                        urlTemplate:
-                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName: 'com.example.souqplus',
-                      ),
-                      PolylineLayer(
-                        polylines: _buildPolylines(
-                          status: status,
-                          pickupPoint: pickupPoint,
-                          driverPoint: driverPoint,
-                          buyerPoint: buyerPoint,
-                        ),
-                      ),
-                      MarkerLayer(markers: markers),
-                    ],
-                  ),
-                ),
+              SharedTrackingSessionMap(
+                sessionId: orderId,
+                pickupPoint: pickupPoint,
+                buyerPoint: buyerPoint,
+                initialDriverPoint: driverPoint,
+                initialDriverUpdatedAt: lastUpdated,
+                routeTargetPoint: routeTargetPoint,
+                routeTargetLabel: routeTargetLabel,
+                height: 360,
               ),
               const SizedBox(height: 16),
+              _TrackingInfoCard(
+                title: 'Shared session',
+                value:
+                    'Both buyer and driver are connected to live session ${orderId.substring(0, 6).toUpperCase()} based on this order ID.',
+                icon: Icons.link_outlined,
+              ),
+              const SizedBox(height: 12),
               _TrackingInfoCard(
                 title: 'Seller pickup address',
                 value: pickupAddress.isEmpty
@@ -180,8 +143,6 @@ class OrderTrackingMapScreen extends StatelessWidget {
       ),
     );
   }
-
-  static const latlng.LatLng _defaultCenter = latlng.LatLng(24.7136, 46.6753);
 
   static String _normalizedStatus(Map<String, dynamic> data) {
     final raw = (data['status'] as String? ?? '').trim();
@@ -286,7 +247,7 @@ class OrderTrackingMapScreen extends StatelessWidget {
     return switch (status) {
       'ordered' => 'Your order is confirmed and waiting for delivery progress.',
       'in transit' =>
-        'Your driver is on the way and the live map will keep updating.',
+        'Your driver is on the way and this shared live session keeps both sides in sync.',
       'delivered' => 'This order has been delivered to the selected address.',
       _ => 'Tracking is available while this order is being delivered.',
     };
@@ -306,80 +267,6 @@ class OrderTrackingMapScreen extends StatelessWidget {
       return '${difference.inMinutes} min ago';
     }
     return '${timestamp.day.toString().padLeft(2, '0')}/${timestamp.month.toString().padLeft(2, '0')} ${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
-  }
-}
-
-List<Polyline> _buildPolylines({
-  required String status,
-  required latlng.LatLng? pickupPoint,
-  required latlng.LatLng? driverPoint,
-  required latlng.LatLng? buyerPoint,
-}) {
-  final points = <latlng.LatLng>[];
-  if (status == 'ordered') {
-    if (driverPoint != null) points.add(driverPoint);
-    if (pickupPoint != null) points.add(pickupPoint);
-  } else {
-    if (driverPoint != null) points.add(driverPoint);
-    if (buyerPoint != null) points.add(buyerPoint);
-  }
-
-  if (points.length < 2) return const [];
-
-  return [
-    Polyline(points: points, color: const Color(0xAA16A34A), strokeWidth: 10),
-    Polyline(points: points, color: const Color(0xFF16A34A), strokeWidth: 6),
-  ];
-}
-
-class _TrackingLegend extends StatelessWidget {
-  const _TrackingLegend();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        _LegendChip(emoji: '🏪', label: 'Seller', color: Color(0xFFF59E0B)),
-        _LegendChip(emoji: '🏍️', label: 'Driver', color: Color(0xFF16A34A)),
-        _LegendChip(emoji: '🏠', label: 'Buyer', color: Color(0xFF1D4ED8)),
-      ],
-    );
-  }
-}
-
-class _LegendChip extends StatelessWidget {
-  const _LegendChip({
-    required this.emoji,
-    required this.label,
-    required this.color,
-  });
-
-  final String emoji;
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(emoji, style: const TextStyle(fontSize: 15)),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(color: color, fontWeight: FontWeight.w700),
-          ),
-        ],
-      ),
-    );
   }
 }
 
@@ -500,77 +387,31 @@ class _AssignedDriverSection extends StatelessWidget {
                     fontSize: 16,
                   ),
                 ),
-                if (driverPhone.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.phone_outlined,
-                        size: 16,
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.phone_outlined,
+                      size: 16,
+                      color: Color(0xFF4B5563),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      driverPhone.isEmpty
+                          ? 'Phone number not available yet.'
+                          : driverPhone,
+                      style: const TextStyle(
                         color: Color(0xFF4B5563),
+                        fontWeight: FontWeight.w600,
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        driverPhone,
-                        style: const TextStyle(
-                          color: Color(0xFF4B5563),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ] else ...[
-                  const SizedBox(height: 4),
-                  const Row(
-                    children: [
-                      Icon(
-                        Icons.phone_outlined,
-                        size: 16,
-                        color: Color(0xFF4B5563),
-                      ),
-                      SizedBox(width: 6),
-                      Text(
-                        'Phone number not available yet.',
-                        style: TextStyle(
-                          color: Color(0xFF4B5563),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
         ],
       ),
-    );
-  }
-}
-
-class _MapMarker extends StatelessWidget {
-  const _MapMarker({required this.emoji, required this.color});
-
-  final String emoji;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-        border: Border.all(color: Colors.white, width: 2),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x26000000),
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      alignment: Alignment.center,
-      child: Text(emoji, style: const TextStyle(fontSize: 16)),
     );
   }
 }

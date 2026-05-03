@@ -2,7 +2,10 @@ const admin = require("firebase-admin");
 const crypto = require("crypto");
 const {getFirestore} = require("firebase-admin/firestore");
 const {setGlobalOptions} = require("firebase-functions");
-const {onDocumentCreated} = require("firebase-functions/v2/firestore");
+const {
+  onDocumentCreated,
+  onDocumentUpdated,
+} = require("firebase-functions/v2/firestore");
 const {onRequest, onCall, HttpsError} = require("firebase-functions/v2/https");
 const app = admin.initializeApp();
 const sellerOnboardingDb = getFirestore(app, "souqplus");
@@ -373,6 +376,70 @@ function logFunctionError(context, error) {
   });
 
   return {message, type, code, raw};
+}
+
+function shortOrderId(orderId) {
+  return String(orderId || "").substring(0, 6).toUpperCase();
+}
+
+function normalizeOrderStatusForNotification(value) {
+  const status = String(value || "").trim().toLowerCase();
+  if (["ordered", "pending", "confirmed"].includes(status)) {
+    return "ordered";
+  }
+  if (["in transit", "in_transit", "shipped"].includes(status)) {
+    return "in transit";
+  }
+  if (["delivered", "complete", "completed"].includes(status)) {
+    return "delivered";
+  }
+  return status;
+}
+
+function prettyOrderStatus(status) {
+  if (status === "in transit") {
+    return "in transit";
+  }
+  if (status === "delivered") {
+    return "delivered";
+  }
+  if (status === "ordered") {
+    return "ordered";
+  }
+  return status || "updated";
+}
+
+async function createUserNotification({uid, notificationId, data}) {
+  if (!uid || !notificationId) {
+    return;
+  }
+
+  await sellerOnboardingDb
+      .collection("users")
+      .doc(uid)
+      .collection("notifications")
+      .doc(notificationId)
+      .set({
+        ...data,
+        isRead: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, {merge: false});
+}
+
+function addTokensFromData(tokenSet, data) {
+  if (Array.isArray(data.fcmTokens)) {
+    for (const token of data.fcmTokens) {
+      const normalized = String(token || "").trim();
+      if (normalized) {
+        tokenSet.add(normalized);
+      }
+    }
+  }
+
+  const latestToken = String(data.latestFcmToken || "").trim();
+  if (latestToken) {
+    tokenSet.add(latestToken);
+  }
 }
 
 function hasAdminRole(data) {
@@ -1190,6 +1257,81 @@ exports.removeDriverAsAdmin = onCall(async (request) => {
   return {success: true, driverId};
 });
 
+exports.createOrderWorkflowNotifications = onDocumentUpdated(
+    {
+      document: "orders/{orderId}",
+      database: "souqplus",
+    },
+    async (event) => {
+      const beforeSnapshot = event.data && event.data.before;
+      const afterSnapshot = event.data && event.data.after;
+      if (!beforeSnapshot || !afterSnapshot) {
+        return;
+      }
+
+      const orderId = event.params.orderId;
+      const before = beforeSnapshot.data() || {};
+      const after = afterSnapshot.data() || {};
+      const writes = [];
+
+      const previousDriverId = String(before.driverId || "").trim();
+      const nextDriverId = String(after.driverId || "").trim();
+      if (nextDriverId && previousDriverId !== nextDriverId) {
+        const buyerName = String(after.buyerName || "").trim();
+        const deliveryAddress = String(after.deliveryAddress || "").trim();
+        const buyerLabel = buyerName || "a buyer";
+        const deliveryLabel = deliveryAddress ?
+          ` Delivery: ${deliveryAddress}` :
+          "";
+
+        writes.push(createUserNotification({
+          uid: nextDriverId,
+          notificationId: `order_${orderId}_assigned_${nextDriverId}`,
+          data: {
+            type: "driver_order_assignment",
+            title: "New delivery assigned",
+            message:
+              `Order #${shortOrderId(orderId)} for ${buyerLabel} has been assigned to you.${deliveryLabel}`,
+            orderId,
+          },
+        }));
+      }
+
+      const previousStatus = normalizeOrderStatusForNotification(before.status);
+      const nextStatus = normalizeOrderStatusForNotification(after.status);
+      const rawNextStatus = String(after.status || "").trim().toLowerCase();
+      const buyerId = String(after.userId || "").trim();
+      const isDeliveryStatus = nextStatus === "in transit" ||
+        nextStatus === "delivered";
+      const isTransferCompletionStatus = rawNextStatus === "complete" ||
+        rawNextStatus === "completed";
+
+      if (
+        buyerId &&
+        previousStatus !== nextStatus &&
+        isDeliveryStatus &&
+        !isTransferCompletionStatus
+      ) {
+        writes.push(createUserNotification({
+          uid: buyerId,
+          notificationId: `order_${orderId}_status_${nextStatus.replace(/\s+/g, "_")}`,
+          data: {
+            type: "order_status_update",
+            title: "Order status updated",
+            message:
+              `Order #${shortOrderId(orderId)} is now ${prettyOrderStatus(nextStatus)}.`,
+            orderId,
+            status: nextStatus,
+          },
+        }));
+      }
+
+      if (writes.length) {
+        await Promise.all(writes);
+      }
+    },
+);
+
 exports.sendPushOnNotificationCreated = onDocumentCreated(
     {
       document: "users/{uid}/notifications/{notificationId}",
@@ -1214,22 +1356,16 @@ exports.sendPushOnNotificationCreated = onDocumentCreated(
           .collection("users")
           .doc(uid)
           .get();
+      const driverSnapshot = await sellerOnboardingDb
+          .collection("drivers")
+          .doc(uid)
+          .get();
       const userData = userSnapshot.data() || {};
+      const driverData = driverSnapshot.data() || {};
       const tokenSet = new Set();
 
-      if (Array.isArray(userData.fcmTokens)) {
-        for (const token of userData.fcmTokens) {
-          const normalized = String(token || "").trim();
-          if (normalized) {
-            tokenSet.add(normalized);
-          }
-        }
-      }
-
-      const latestToken = String(userData.latestFcmToken || "").trim();
-      if (latestToken) {
-        tokenSet.add(latestToken);
-      }
+      addTokensFromData(tokenSet, userData);
+      addTokensFromData(tokenSet, driverData);
 
       const tokens = Array.from(tokenSet);
       if (!tokens.length) {
@@ -1280,9 +1416,19 @@ exports.sendPushOnNotificationCreated = onDocumentCreated(
       });
 
       if (invalidTokens.length) {
-        await userSnapshot.ref.set({
+        const cleanupData = {
           fcmTokens: admin.firestore.FieldValue.arrayRemove(...invalidTokens),
-        }, {merge: true});
+        };
+        const cleanupWrites = [];
+
+        if (userSnapshot.exists) {
+          cleanupWrites.push(userSnapshot.ref.set(cleanupData, {merge: true}));
+        }
+        if (driverSnapshot.exists) {
+          cleanupWrites.push(driverSnapshot.ref.set(cleanupData, {merge: true}));
+        }
+
+        await Promise.all(cleanupWrites);
       }
     },
 );

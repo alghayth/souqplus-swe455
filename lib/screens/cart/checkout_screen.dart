@@ -32,6 +32,7 @@ class CheckoutScreen extends StatefulWidget {
 class _CheckoutScreenState extends State<CheckoutScreen> {
   static const latlng.LatLng _defaultCenter = latlng.LatLng(24.7136, 46.6753);
   static const String _ordersCollection = 'orders';
+  static const Duration _estimatedDeliveryWindow = Duration(days: 5);
   static const String _createPaymentIntentUrl =
       'https://us-central1-souqplus-1bb34.cloudfunctions.net/createMarketplacePaymentIntent';
   static const String _finalizeMarketplaceOrderUrl =
@@ -335,6 +336,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final deliveryLocationDetails =
         (_selectedLocationDetails ?? deliveryAddress).trim();
     final pickupDetails = await _readPickupDetails(purchasedItems);
+    final estimatedDeliveryAt = Timestamp.fromDate(
+      DateTime.now().add(_estimatedDeliveryWindow),
+    );
     final products = purchasedItems
         .map(
           (item) => <String, dynamic>{
@@ -374,6 +378,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       'pickupAddressText': pickupDetails.addressText,
       'status': 'ordered',
       'createdAt': FieldValue.serverTimestamp(),
+      'estimatedDeliveryAt': estimatedDeliveryAt,
     };
 
     if (pickupDetails.latitude != null && pickupDetails.longitude != null) {

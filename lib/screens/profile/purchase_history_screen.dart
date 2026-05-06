@@ -10,6 +10,7 @@ class PurchaseHistoryScreen extends StatelessWidget {
   const PurchaseHistoryScreen({super.key});
 
   static String routeName = '/purchase_history';
+  static const Duration _estimatedDeliveryWindow = Duration(days: 5);
 
   @override
   Widget build(BuildContext context) {
@@ -140,6 +141,7 @@ class PurchaseHistoryScreen extends StatelessWidget {
                     final deliveryAddress =
                         (data['deliveryAddress'] as String? ?? '').trim();
                     final total = _readTotal(data);
+                    final deliveryEstimate = _deliveryEstimate(data, status);
 
                     return Container(
                       padding: const EdgeInsets.all(16),
@@ -217,6 +219,8 @@ class PurchaseHistoryScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 14),
                           _OrderProgressTracker(status: status),
+                          const SizedBox(height: 12),
+                          _DeliveryEstimateRow(estimate: deliveryEstimate),
                           const SizedBox(height: 14),
                           SizedBox(
                             width: double.infinity,
@@ -304,6 +308,71 @@ class PurchaseHistoryScreen extends StatelessWidget {
     return 0;
   }
 
+  static _DeliveryEstimate _deliveryEstimate(
+    Map<String, dynamic> data,
+    String status,
+  ) {
+    final normalizedStatus = status.trim().toLowerCase();
+    if (normalizedStatus == 'delivered') {
+      return const _DeliveryEstimate(
+        label: 'Delivered',
+        color: Color(0xFF16A34A),
+      );
+    }
+
+    final estimateDate = _readEstimatedDeliveryDate(data);
+    if (estimateDate == null) {
+      return const _DeliveryEstimate(
+        label: 'Estimated delivery unavailable',
+        color: Color(0xFF6B7280),
+      );
+    }
+
+    final today = DateTime.now();
+    final todayOnly = DateTime(today.year, today.month, today.day);
+    final estimateOnly = DateTime(
+      estimateDate.year,
+      estimateDate.month,
+      estimateDate.day,
+    );
+    final remainingDays = estimateOnly.difference(todayOnly).inDays;
+
+    if (remainingDays < 0) {
+      return _DeliveryEstimate(
+        label: 'Estimated delivery passed: ${_formatDate(estimateDate)}',
+        color: const Color(0xFFB45309),
+      );
+    }
+
+    if (remainingDays == 0) {
+      return const _DeliveryEstimate(
+        label: 'Estimated delivery: today',
+        color: Color(0xFF2563EB),
+      );
+    }
+
+    final dayLabel = remainingDays == 1 ? '1 day' : '$remainingDays days';
+    return _DeliveryEstimate(
+      label:
+          'Estimated delivery: ${_formatDate(estimateDate)} ($dayLabel left)',
+      color: const Color(0xFF2563EB),
+    );
+  }
+
+  static DateTime? _readEstimatedDeliveryDate(Map<String, dynamic> data) {
+    final estimatedDeliveryAt = data['estimatedDeliveryAt'];
+    if (estimatedDeliveryAt is Timestamp) {
+      return estimatedDeliveryAt.toDate();
+    }
+
+    final createdAt = _readDate(data);
+    if (createdAt.millisecondsSinceEpoch == 0) {
+      return null;
+    }
+
+    return createdAt.add(_estimatedDeliveryWindow);
+  }
+
   static List<Map<String, dynamic>> _readItems(Map<String, dynamic> data) {
     final rawItems = data['products'] ?? data['items'];
     if (rawItems is! List) {
@@ -352,6 +421,46 @@ class PurchaseHistoryScreen extends StatelessWidget {
       'delivered' => 'DELIVERED',
       _ => status.toUpperCase(),
     };
+  }
+}
+
+class _DeliveryEstimate {
+  const _DeliveryEstimate({
+    required this.label,
+    required this.color,
+  });
+
+  final String label;
+  final Color color;
+}
+
+class _DeliveryEstimateRow extends StatelessWidget {
+  const _DeliveryEstimateRow({required this.estimate});
+
+  final _DeliveryEstimate estimate;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          Icons.local_shipping_outlined,
+          size: 20,
+          color: estimate.color,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            estimate.label,
+            style: TextStyle(
+              color: estimate.color,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 

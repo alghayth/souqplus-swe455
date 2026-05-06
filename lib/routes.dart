@@ -3,6 +3,7 @@ import 'package:souqplus/models/cart.dart';
 import 'package:souqplus/screens/cart/cart_screen.dart';
 import 'package:souqplus/screens/cart/checkout_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_alerts_screen.dart';
+import 'package:souqplus/screens/admin_dashboard/admin_active_orders_map_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_categories_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_records_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_drivers_screen.dart';
@@ -58,6 +59,8 @@ final Map<String, WidgetBuilder> routes = {
   AdminCategoriesScreen.routeName: (context) => const AdminCategoriesScreen(),
   AdminPaymentsScreen.routeName: (context) => const AdminPaymentsScreen(),
   AdminAlertsScreen.routeName: (context) => const AdminAlertsScreen(),
+  AdminActiveOrdersMapScreen.routeName: (context) =>
+      const AdminActiveOrdersMapScreen(),
   AdminRecordsScreen.routeName: (context) => const AdminRecordsScreen(),
   AdminDriversScreen.routeName: (context) => const AdminDriversScreen(),
 

@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:souqplus/components/page_header_title.dart';
 import 'package:souqplus/constants.dart';
+import 'package:souqplus/screens/admin_dashboard/admin_active_orders_map_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_alerts_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_categories_screen.dart';
 import 'package:souqplus/screens/admin_dashboard/admin_drivers_screen.dart';
@@ -136,6 +137,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           return status == 'ordered';
         }).length;
         final alertCount = pendingOrders;
+        final activeTrackedOrders = docs.where((doc) {
+          final data = doc.data();
+          final status = AdminOrderService.normalizeOrderStatus(
+            (data['status'] as String?) ?? '',
+          );
+          return status == 'ordered' || status == 'in transit';
+        }).length;
         final totalRevenue = docs.fold<double>(0, (totalValue, doc) {
           final data = doc.data();
           final paymentStatus = ((data['paymentStatus'] as String?) ?? '')
@@ -331,8 +339,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         ),
                       ),
                       AdminFeatureCard(
+                        icon: Icons.map_rounded,
+                        title: 'Active Orders Map',
+                        description:
+                            'Monitor driver, seller, and buyer route maps for active orders.',
+                        badgeText: '$activeTrackedOrders',
+                        onTap: () => Navigator.pushNamed(
+                          context,
+                          AdminActiveOrdersMapScreen.routeName,
+                        ),
+                      ),
+                      AdminFeatureCard(
                         icon: Icons.storage_rounded,
-                        title: 'Database',
+                        title: 'Data Management',
                         description:
                             'View registered users and product posts from Firestore.',
                         onTap: () => Navigator.pushNamed(

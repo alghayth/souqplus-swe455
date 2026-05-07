@@ -184,6 +184,13 @@ class AdminOrderService {
     }, SetOptions(merge: true));
   }
 
+  Future<void> removeUser({required String userId}) {
+    final callable = FirebaseFunctions.instance.httpsCallable(
+      'removeUserAsAdmin',
+    );
+    return callable.call({'userId': userId});
+  }
+
   Future<void> updateDriverBlocked({
     required String driverId,
     required bool blocked,
@@ -200,6 +207,19 @@ class AdminOrderService {
         'unblockedBy': adminUid,
       },
     }, SetOptions(merge: true));
+  }
+
+  Future<int> inTransitOrderCountForDriver({required String driverId}) async {
+    final snapshot = await db
+        .collection('orders')
+        .where('driverId', isEqualTo: driverId)
+        .get();
+    return snapshot.docs.where((doc) {
+      final status = normalizeOrderStatus(
+        (doc.data()['status'] as String?) ?? '',
+      );
+      return status == 'in transit';
+    }).length;
   }
 
   Future<void> removeProductPost({required String productId}) {

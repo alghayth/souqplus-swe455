@@ -664,7 +664,11 @@ class _DriverAssignmentOption {
 
     final name = (data['fullName'] as String? ?? '').trim();
     final email = (data['email'] as String? ?? '').trim();
-    final phoneNumber = (data['phoneNumber'] as String? ?? '').trim();
+    final profilePhone = (data['phoneNumber'] as String? ?? '').trim();
+    final registrationPhone = (data['phone'] as String? ?? '').trim();
+    final phoneNumber = profilePhone.isNotEmpty
+        ? profilePhone
+        : registrationPhone;
 
     return _DriverAssignmentOption(
       id: doc.id,

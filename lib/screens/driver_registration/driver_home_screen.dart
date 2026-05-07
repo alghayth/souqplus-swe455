@@ -1099,6 +1099,7 @@ class _DriverOrderInfoScreenState extends State<_DriverOrderInfoScreen> {
                     routeTargetPoint: _toMapPoint(routeTargetPoint),
                     routeTargetLabel: routeTargetLabel,
                     height: 220,
+                    showPlannedRoute: false,
                   ),
                 ],
               ),

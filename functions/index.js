@@ -1225,6 +1225,53 @@ exports.removeProductPostAsAdmin = onCall(async (request) => {
   return {success: true, productId};
 });
 
+exports.removeUserAsAdmin = onCall(async (request) => {
+  await assertAdminCallable(request);
+
+  const auth = request.auth;
+  const userId = String(
+      request.data && request.data.userId || "",
+  ).trim();
+  if (!userId) {
+    throw new HttpsError(
+        "invalid-argument",
+        "userId is required.",
+    );
+  }
+
+  if (auth && userId === auth.uid) {
+    throw new HttpsError(
+        "failed-precondition",
+        "You cannot remove your own admin account.",
+    );
+  }
+
+  const userRef = sellerOnboardingDb.collection("users").doc(userId);
+  const userSnapshot = await userRef.get();
+  if (!userSnapshot.exists) {
+    throw new HttpsError("not-found", "User was not found.");
+  }
+
+  if (hasAdminRole(userSnapshot.data() || {})) {
+    throw new HttpsError(
+        "permission-denied",
+        "Admin accounts cannot be removed here.",
+    );
+  }
+
+  await userRef.delete();
+
+  try {
+    await admin.auth().deleteUser(userId);
+  } catch (error) {
+    if (!error || error.code !== "auth/user-not-found") {
+      throw error;
+    }
+  }
+
+  return {success: true, userId};
+});
+
 exports.removeDriverAsAdmin = onCall(async (request) => {
   await assertAdminCallable(request);
 

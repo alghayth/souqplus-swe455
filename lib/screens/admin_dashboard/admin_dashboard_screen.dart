@@ -351,7 +351,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       ),
                       AdminFeatureCard(
                         icon: Icons.storage_rounded,
-                        title: 'Data Management',
+                        title: 'SouqPlus Warehouse',
                         description:
                             'View registered users and product posts from Firestore.',
                         onTap: () => Navigator.pushNamed(

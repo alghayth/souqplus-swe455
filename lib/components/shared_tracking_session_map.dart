@@ -19,6 +19,7 @@ class SharedTrackingSessionMap extends StatefulWidget {
     required this.routeTargetPoint,
     required this.routeTargetLabel,
     this.height = 320,
+    this.showPlannedRoute = false,
   });
 
   final String sessionId;
@@ -29,6 +30,7 @@ class SharedTrackingSessionMap extends StatefulWidget {
   final latlng.LatLng? routeTargetPoint;
   final String routeTargetLabel;
   final double height;
+  final bool showPlannedRoute;
 
   @override
   State<SharedTrackingSessionMap> createState() =>
@@ -59,10 +61,12 @@ class _SharedTrackingSessionMapState extends State<SharedTrackingSessionMap>
   int? _latestRecordedAtMs;
   String? _routeErrorMessage;
   bool _isRouteLoading = false;
+  double? _arrivalDurationSeconds;
   int _routeRequestId = 0;
   latlng.LatLng? _lastRouteOrigin;
   latlng.LatLng? _lastRouteDestination;
   DateTime? _lastRouteFetchedAt;
+  int _lastRoutePointCount = 0;
 
   @override
   void initState() {
@@ -95,6 +99,8 @@ class _SharedTrackingSessionMapState extends State<SharedTrackingSessionMap>
             widget.routeTargetPoint?.latitude ||
         oldWidget.routeTargetPoint?.longitude !=
             widget.routeTargetPoint?.longitude;
+    final plannedRouteModeChanged =
+        oldWidget.showPlannedRoute != widget.showPlannedRoute;
 
     if (fallbackDriverChanged || fallbackTimestampChanged) {
       final nextFallbackPoint = widget.initialDriverPoint;
@@ -120,11 +126,15 @@ class _SharedTrackingSessionMapState extends State<SharedTrackingSessionMap>
         } else {
           _displayDriverPoint = _displayDriverPoint ?? nextFallbackPoint;
         }
-        unawaited(_refreshRoadRoute());
+        if (widget.showPlannedRoute) {
+          unawaited(_refreshRoadRoute());
+        } else {
+          unawaited(_refreshActualRoadTrail());
+        }
       }
     }
 
-    if (!sessionChanged && !destinationChanged) {
+    if (!sessionChanged && !destinationChanged && !plannedRouteModeChanged) {
       return;
     }
 
@@ -132,12 +142,14 @@ class _SharedTrackingSessionMapState extends State<SharedTrackingSessionMap>
     _trackingPoints = const <_TrackingPointData>[];
     _routeSnapshot = null;
     _routeErrorMessage = null;
+    _arrivalDurationSeconds = null;
     _driverPoint = widget.initialDriverPoint;
     _displayDriverPoint = widget.initialDriverPoint;
     _latestRecordedAtMs = widget.initialDriverUpdatedAt?.millisecondsSinceEpoch;
     _lastRouteOrigin = null;
     _lastRouteDestination = null;
     _lastRouteFetchedAt = null;
+    _lastRoutePointCount = 0;
     _subscribeToSharedSession();
   }
 
@@ -250,6 +262,11 @@ class _SharedTrackingSessionMapState extends State<SharedTrackingSessionMap>
   }
 
   Future<void> _refreshRoadRoute() async {
+    if (!widget.showPlannedRoute) {
+      await _refreshActualRoadTrail();
+      return;
+    }
+
     final origin = _driverPoint;
     final destination = widget.routeTargetPoint;
     if (origin == null || destination == null || _isLocationUnavailable) {
@@ -301,6 +318,7 @@ class _SharedTrackingSessionMapState extends State<SharedTrackingSessionMap>
         _lastRouteFetchedAt = DateTime.now();
         _lastRouteOrigin = origin;
         _lastRouteDestination = destination;
+        _lastRoutePointCount = 2;
       });
     } catch (error) {
       if (!mounted || requestId != _routeRequestId) return;
@@ -309,6 +327,97 @@ class _SharedTrackingSessionMapState extends State<SharedTrackingSessionMap>
         _routeSnapshot = null;
         _isRouteLoading = false;
       });
+    }
+  }
+
+  Future<void> _refreshActualRoadTrail() async {
+    final trailPoints = _trackingPoints.map((point) => point.point).toList();
+    if (trailPoints.length < 2) {
+      final requestId = ++_routeRequestId;
+      final etaRoute = await _tryFetchArrivalRoute(widget.routeTargetPoint);
+      if (!mounted || requestId != _routeRequestId) return;
+      setState(() {
+        _routeSnapshot = null;
+        _routeErrorMessage = null;
+        _isRouteLoading = false;
+        _arrivalDurationSeconds = etaRoute?.durationSeconds;
+        _lastRoutePointCount = 0;
+      });
+      return;
+    }
+
+    final origin = trailPoints.first;
+    final destination = trailPoints.last;
+    final enoughTimePassed =
+        _lastRouteFetchedAt == null ||
+        DateTime.now().difference(_lastRouteFetchedAt!).inSeconds >= 5;
+    final originChanged =
+        _lastRouteOrigin == null ||
+        _distanceBetween(_lastRouteOrigin!, origin) >= 3;
+    final destinationMovedEnough =
+        _lastRouteDestination == null ||
+        _distanceBetween(_lastRouteDestination!, destination) >= 8;
+    final enoughNewPoints = trailPoints.length - _lastRoutePointCount >= 3;
+
+    if (!enoughTimePassed &&
+        !originChanged &&
+        !destinationMovedEnough &&
+        !enoughNewPoints) {
+      return;
+    }
+
+    final requestId = ++_routeRequestId;
+    if (mounted) {
+      setState(() => _isRouteLoading = true);
+    } else {
+      _isRouteLoading = true;
+    }
+
+    LiveRouteSnapshot? route;
+    Object? routeError;
+    try {
+      route = await _routeService.fetchDrivingRouteThrough(
+        points: _sampleTrailWaypoints(trailPoints),
+      );
+    } catch (error) {
+      routeError = error;
+    }
+
+    final etaRoute = await _tryFetchArrivalRoute(widget.routeTargetPoint);
+    if (!mounted || requestId != _routeRequestId) return;
+    setState(() {
+      _routeSnapshot = route;
+      _arrivalDurationSeconds = etaRoute?.durationSeconds;
+      _routeErrorMessage = routeError == null
+          ? null
+          : 'Movement route is temporarily unavailable.';
+      _isRouteLoading = false;
+      _lastRouteFetchedAt = DateTime.now();
+      _lastRouteOrigin = origin;
+      _lastRouteDestination = destination;
+      _lastRoutePointCount = trailPoints.length;
+    });
+  }
+
+  Future<LiveRouteSnapshot?> _fetchArrivalRoute(
+    latlng.LatLng? destination,
+  ) async {
+    final origin = _driverPoint ??
+        (_trackingPoints.isEmpty ? null : _trackingPoints.last.point);
+    if (origin == null || destination == null) return null;
+    return _routeService.fetchDrivingRoute(
+      origin: origin,
+      destination: destination,
+    );
+  }
+
+  Future<LiveRouteSnapshot?> _tryFetchArrivalRoute(
+    latlng.LatLng? destination,
+  ) async {
+    try {
+      return await _fetchArrivalRoute(destination);
+    } catch (_) {
+      return null;
     }
   }
 
@@ -384,23 +493,11 @@ class _SharedTrackingSessionMapState extends State<SharedTrackingSessionMap>
             runSpacing: 8,
             children: [
               _MetricChip(
-                label: 'Route',
-                value: widget.routeTargetLabel,
-                color: const Color(0xFF0F3B66),
-              ),
-              _MetricChip(
-                label: 'Distance',
-                value: _routeSnapshot == null
-                    ? '--'
-                    : _formatDistance(_routeSnapshot!.distanceMeters),
-                color: const Color(0xFF1D4ED8),
-              ),
-              _MetricChip(
                 label: 'ETA',
-                value: _routeSnapshot == null
+                value: _etaDurationSeconds == null
                     ? '--'
-                    : _formatEta(_routeSnapshot!.durationSeconds),
-                color: const Color(0xFF16A34A),
+                    : _formatEtaMinutes(_etaDurationSeconds!),
+                color: const Color(0xFF1D4ED8),
               ),
               _MetricChip(
                 label: 'Speed',
@@ -413,9 +510,11 @@ class _SharedTrackingSessionMapState extends State<SharedTrackingSessionMap>
           ),
           if (_isRouteLoading) ...[
             const SizedBox(height: 10),
-            const Text(
-              'Refreshing the live road route...',
-              style: TextStyle(
+            Text(
+              widget.showPlannedRoute
+                  ? 'Refreshing the live road route...'
+                  : 'Matching the driver movement to real roads...',
+              style: const TextStyle(
                 color: Color(0xFF6B7280),
                 fontWeight: FontWeight.w600,
               ),
@@ -461,6 +560,27 @@ class _SharedTrackingSessionMapState extends State<SharedTrackingSessionMap>
   List<Polyline> _buildPolylines() {
     final polylines = <Polyline>[];
     final traveledPoints = _trackingPoints.map((point) => point.point).toList();
+
+    if (!widget.showPlannedRoute) {
+      if (_routeSnapshot != null && _routeSnapshot!.polylinePoints.length >= 2) {
+        polylines.add(
+          Polyline(
+            points: _routeSnapshot!.polylinePoints,
+            color: const Color(0xAA16A34A),
+            strokeWidth: 10,
+          ),
+        );
+        polylines.add(
+          Polyline(
+            points: _routeSnapshot!.polylinePoints,
+            color: const Color(0xFF16A34A),
+            strokeWidth: 6,
+          ),
+        );
+      }
+      return polylines;
+    }
+
     if (traveledPoints.length >= 2) {
       polylines.add(
         Polyline(
@@ -527,6 +647,25 @@ class _SharedTrackingSessionMapState extends State<SharedTrackingSessionMap>
       accuracyMeters: (data['accuracy'] as num?)?.toDouble(),
       speedMetersPerSecond: (data['speed'] as num?)?.toDouble(),
     );
+  }
+
+  List<latlng.LatLng> _sampleTrailWaypoints(List<latlng.LatLng> points) {
+    const maxWaypoints = 24;
+    if (points.length <= maxWaypoints) return points;
+
+    final sampledPoints = <latlng.LatLng>[];
+    var previousIndex = -1;
+    for (var i = 0; i < maxWaypoints; i++) {
+      final index = ((points.length - 1) * i / (maxWaypoints - 1)).round();
+      if (index == previousIndex) continue;
+      sampledPoints.add(points[index]);
+      previousIndex = index;
+    }
+
+    if (sampledPoints.last != points.last) {
+      sampledPoints.add(points.last);
+    }
+    return sampledPoints;
   }
 
   bool get _isLocationUnavailable {
@@ -596,21 +735,16 @@ class _SharedTrackingSessionMapState extends State<SharedTrackingSessionMap>
     );
   }
 
-  String _formatDistance(double meters) {
-    if (meters >= 1000) {
-      return '${(meters / 1000).toStringAsFixed(1)} km';
+  double? get _etaDurationSeconds {
+    if (widget.showPlannedRoute) {
+      return _routeSnapshot?.durationSeconds;
     }
-    return '${meters.round()} m';
+    return _arrivalDurationSeconds;
   }
 
-  String _formatEta(double seconds) {
-    final minutes = (seconds / 60).round();
-    if (minutes < 60) return '$minutes min';
-    final hours = minutes ~/ 60;
-    final remainingMinutes = minutes % 60;
-    return remainingMinutes == 0
-        ? '$hours hr'
-        : '$hours hr $remainingMinutes min';
+  String _formatEtaMinutes(double seconds) {
+    final minutes = math.max(1, (seconds / 60).ceil());
+    return '$minutes min';
   }
 
   String _formatSpeed(double speedMetersPerSecond) {

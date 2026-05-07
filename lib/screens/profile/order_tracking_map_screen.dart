@@ -50,8 +50,7 @@ class OrderTrackingMapScreen extends StatelessWidget {
           final assignedDriverId = (data['driverId'] as String? ?? '').trim();
           final assignedDriverName = (data['driverName'] as String? ?? '')
               .trim();
-          final assignedDriverPhone =
-              (data['driverPhoneNumber'] as String? ?? '').trim();
+          final assignedDriverPhone = _readDriverPhone(data);
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -77,7 +76,7 @@ class OrderTrackingMapScreen extends StatelessWidget {
                     Text(
                       driverPoint == null
                           ? 'Pickup and drop-off are shown below. Driver location appears when delivery starts.'
-                          : 'You are watching the driver real GPS movement in the same shared delivery session.',
+                          : 'You are watching the driver real GPS movement.',
                       style: const TextStyle(color: Colors.white),
                     ),
                   ],
@@ -93,15 +92,9 @@ class OrderTrackingMapScreen extends StatelessWidget {
                 routeTargetPoint: routeTargetPoint,
                 routeTargetLabel: routeTargetLabel,
                 height: 360,
+                showPlannedRoute: false,
               ),
               const SizedBox(height: 16),
-              _TrackingInfoCard(
-                title: 'Shared session',
-                value:
-                    'Both buyer and driver are connected to live session ${orderId.substring(0, 6).toUpperCase()} based on this order ID.',
-                icon: Icons.link_outlined,
-              ),
-              const SizedBox(height: 12),
               _TrackingInfoCard(
                 title: 'Seller pickup address',
                 value: pickupAddress.isEmpty
@@ -126,8 +119,9 @@ class OrderTrackingMapScreen extends StatelessWidget {
                 icon: Icons.my_location_outlined,
               ),
               const SizedBox(height: 12),
-              _AssignedDriverSection(
+              _AssignedDriverPhoneResolver(
                 driverAssigned: assignedDriverId.isNotEmpty,
+                driverId: assignedDriverId,
                 driverName: assignedDriverName,
                 driverPhone: assignedDriverPhone,
               ),
@@ -226,6 +220,14 @@ class OrderTrackingMapScreen extends StatelessWidget {
     return '';
   }
 
+  static String _readDriverPhone(Map<String, dynamic> data) {
+    for (final key in ['driverPhoneNumber', 'phoneNumber', 'phone']) {
+      final value = (data[key] as String? ?? '').trim();
+      if (value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
   static DateTime? _readDriverLocationUpdatedAt(Map<String, dynamic> data) {
     final timestamp = data['driverLocationUpdatedAt'];
     if (timestamp is Timestamp) {
@@ -247,7 +249,7 @@ class OrderTrackingMapScreen extends StatelessWidget {
     return switch (status) {
       'ordered' => 'Your order is confirmed and waiting for delivery progress.',
       'in transit' =>
-        'Your driver is on the way and this shared live session keeps both sides in sync.',
+        'Your driver is on the way and the live map keeps both sides in sync.',
       'delivered' => 'This order has been delivered to the selected address.',
       _ => 'Tracking is available while this order is being delivered.',
     };
@@ -323,6 +325,48 @@ class _TrackingInfoCard extends StatelessWidget {
   }
 }
 
+class _AssignedDriverPhoneResolver extends StatelessWidget {
+  const _AssignedDriverPhoneResolver({
+    required this.driverAssigned,
+    required this.driverId,
+    required this.driverName,
+    required this.driverPhone,
+  });
+
+  final bool driverAssigned;
+  final String driverId;
+  final String driverName;
+  final String driverPhone;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!driverAssigned || driverPhone.isNotEmpty) {
+      return _AssignedDriverSection(
+        driverAssigned: driverAssigned,
+        driverName: driverName,
+        driverPhone: driverPhone,
+      );
+    }
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: db.collection('drivers').doc(driverId).snapshots(),
+      builder: (context, snapshot) {
+        final data = snapshot.data?.data();
+        final profilePhone = data == null
+            ? ''
+            : OrderTrackingMapScreen._readDriverPhone(data);
+        final profileName = (data?['fullName'] as String? ?? '').trim();
+
+        return _AssignedDriverSection(
+          driverAssigned: driverAssigned,
+          driverName: driverName.isEmpty ? profileName : driverName,
+          driverPhone: profilePhone,
+        );
+      },
+    );
+  }
+}
+
 class _AssignedDriverSection extends StatelessWidget {
   const _AssignedDriverSection({
     required this.driverAssigned,
@@ -343,6 +387,10 @@ class _AssignedDriverSection extends StatelessWidget {
         icon: Icons.person_outline,
       );
     }
+
+    final phoneText = driverPhone.isEmpty
+        ? 'Phone number not available yet.'
+        : driverPhone;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -396,13 +444,13 @@ class _AssignedDriverSection extends StatelessWidget {
                       color: Color(0xFF4B5563),
                     ),
                     const SizedBox(width: 6),
-                    Text(
-                      driverPhone.isEmpty
-                          ? 'Phone number not available yet.'
-                          : driverPhone,
-                      style: const TextStyle(
-                        color: Color(0xFF4B5563),
-                        fontWeight: FontWeight.w600,
+                    Expanded(
+                      child: Text(
+                        phoneText,
+                        style: const TextStyle(
+                          color: Color(0xFF4B5563),
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ],

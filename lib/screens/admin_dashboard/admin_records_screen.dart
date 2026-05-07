@@ -20,7 +20,7 @@ class AdminRecordsScreen extends StatelessWidget {
         backgroundColor: const Color.fromARGB(255, 253, 246, 210),
         appBar: AppBar(
           backgroundColor: kSecondaryColor,
-          title: const PageHeaderTitle('Database'),
+          title: const PageHeaderTitle('Souqplus Warehouse'),
           bottom: const TabBar(
             labelColor: Colors.white,
             unselectedLabelColor: Color(0xCCEAF5FC),
@@ -54,6 +54,7 @@ class _UsersRecordsTab extends StatefulWidget {
 
 class _UsersRecordsTabState extends State<_UsersRecordsTab> {
   String? _updatingUserId;
+  String? _removingUserId;
 
   Future<void> _confirmSetBlocked({
     required QueryDocumentSnapshot<Map<String, dynamic>> doc,
@@ -133,6 +134,59 @@ class _UsersRecordsTabState extends State<_UsersRecordsTab> {
     );
   }
 
+  Future<void> _confirmRemoveUser(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) async {
+    final data = doc.data();
+    final email = _text(data, 'email', fallback: 'this user');
+    final shouldRemove = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove User'),
+        content: Text(
+          'Remove $email from Souqplus?\n\nThis will delete the user account and profile record.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Remove', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldRemove != true) return;
+    await _removeUser(doc: doc, email: email);
+  }
+
+  Future<void> _removeUser({
+    required QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    required String email,
+  }) async {
+    setState(() => _removingUserId = doc.id);
+    try {
+      await widget.service.removeUser(userId: doc.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$email was removed successfully.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not remove user: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _removingUserId = null);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentAdminUid = FirebaseAuth.instance.currentUser?.uid;
@@ -159,6 +213,7 @@ class _UsersRecordsTabState extends State<_UsersRecordsTab> {
         final isCurrentAdmin = doc.id == currentAdminUid;
         final canBlock = !isAdmin && !isCurrentAdmin;
         final isUpdating = _updatingUserId == doc.id;
+        final isRemoving = _removingUserId == doc.id;
         final email = _text(data, 'email', fallback: 'No email');
         final fullName = _displayName(data);
 
@@ -172,33 +227,19 @@ class _UsersRecordsTabState extends State<_UsersRecordsTab> {
             'Phone: ${_text(data, 'phoneNumber', fallback: 'Not set')}',
             'UID: ${_text(data, 'uid', fallback: doc.id)}',
           ],
-          action: canBlock
-              ? ElevatedButton.icon(
-                  onPressed: isUpdating
-                      ? null
-                      : () => _confirmSetBlocked(
-                          doc: doc,
-                          blocked: !isBlocked,
-                        ),
-                  icon: isUpdating
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(
-                          isBlocked
-                              ? Icons.lock_open_rounded
-                              : Icons.block_rounded,
-                        ),
-                  label: Text(isBlocked ? 'Unblock User' : 'Block User'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isBlocked ? Colors.green : Colors.red,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: const Color(0xFFE8EEF5),
-                    disabledForegroundColor: const Color(0xFF6B7C93),
+          headerAction: canBlock
+              ? _UserActionsMenu(
+                  isBlocked: isBlocked,
+                  isBusy: isUpdating || isRemoving,
+                  onSetBlocked: () => _confirmSetBlocked(
+                    doc: doc,
+                    blocked: !isBlocked,
                   ),
+                  onRemove: () => _confirmRemoveUser(doc),
                 )
+              : null,
+          action: canBlock
+              ? null
               : const Text(
                   'Admin accounts cannot be blocked here.',
                   style: TextStyle(
@@ -208,6 +249,93 @@ class _UsersRecordsTabState extends State<_UsersRecordsTab> {
                 ),
         );
       },
+    );
+  }
+}
+
+enum _UserRecordAction { setBlocked, remove }
+
+class _UserActionsMenu extends StatelessWidget {
+  const _UserActionsMenu({
+    required this.isBlocked,
+    required this.isBusy,
+    required this.onSetBlocked,
+    required this.onRemove,
+  });
+
+  final bool isBlocked;
+  final bool isBusy;
+  final VoidCallback onSetBlocked;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<_UserRecordAction>(
+      enabled: !isBusy,
+      tooltip: 'User actions',
+      icon: isBusy
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.more_vert_rounded),
+      onSelected: (action) {
+        switch (action) {
+          case _UserRecordAction.setBlocked:
+            onSetBlocked();
+            break;
+          case _UserRecordAction.remove:
+            onRemove();
+            break;
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: _UserRecordAction.setBlocked,
+          child: _MenuActionLabel(
+            icon: isBlocked ? Icons.lock_open_rounded : Icons.block_rounded,
+            text: isBlocked ? 'Unblock User' : 'Block User',
+            color: isBlocked ? Colors.green : Colors.red,
+          ),
+        ),
+        const PopupMenuDivider(height: 1),
+        const PopupMenuItem(
+          value: _UserRecordAction.remove,
+          child: _MenuActionLabel(
+            icon: Icons.delete_outline_rounded,
+            text: 'Remove User',
+            color: Colors.red,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MenuActionLabel extends StatelessWidget {
+  const _MenuActionLabel({
+    required this.icon,
+    required this.text,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(width: 10),
+        Text(
+          text,
+          style: TextStyle(color: color, fontWeight: FontWeight.w600),
+        ),
+      ],
     );
   }
 }
@@ -406,6 +534,7 @@ class _RecordCard extends StatelessWidget {
     this.badgeColor,
     this.imageUrl,
     this.description,
+    this.headerAction,
     this.action,
   });
 
@@ -416,6 +545,7 @@ class _RecordCard extends StatelessWidget {
   final Color? badgeColor;
   final String? imageUrl;
   final String? description;
+  final Widget? headerAction;
   final Widget? action;
 
   @override
@@ -461,6 +591,10 @@ class _RecordCard extends StatelessWidget {
                     ),
                   ),
                 ),
+              if (headerAction != null) ...[
+                const SizedBox(width: 4),
+                headerAction!,
+              ],
             ],
           ),
           if (subtitle.isNotEmpty) ...[

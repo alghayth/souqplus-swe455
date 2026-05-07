@@ -396,6 +396,23 @@ function normalizeOrderStatusForNotification(value) {
   return status;
 }
 
+async function activeAssignedOrderCountForDriver(driverId) {
+  const snapshot = await sellerOnboardingDb
+      .collection("orders")
+      .where("driverId", "==", driverId)
+      .get();
+
+  let count = 0;
+  for (const orderDoc of snapshot.docs) {
+    const data = orderDoc.data() || {};
+    const status = normalizeOrderStatusForNotification(data.status);
+    if (status !== "delivered") {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 function prettyOrderStatus(status) {
   if (status === "in transit") {
     return "in transit";
@@ -1289,6 +1306,18 @@ exports.removeDriverAsAdmin = onCall(async (request) => {
   const driverSnapshot = await driverRef.get();
   if (!driverSnapshot.exists) {
     throw new HttpsError("not-found", "Driver was not found.");
+  }
+
+  const activeAssignedOrderCount =
+    await activeAssignedOrderCountForDriver(driverId);
+  if (activeAssignedOrderCount > 0) {
+    const orderText = activeAssignedOrderCount === 1 ?
+      "an active assigned order" :
+      `${activeAssignedOrderCount} active assigned orders`;
+    throw new HttpsError(
+        "failed-precondition",
+        `This driver cannot be removed while assigned to ${orderText}. Reassign the order or wait until it is delivered first.`,
+    );
   }
 
   await driverRef.delete();

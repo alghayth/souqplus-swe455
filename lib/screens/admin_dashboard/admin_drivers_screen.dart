@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:souqplus/components/page_header_title.dart';
 import 'package:souqplus/constants.dart';
@@ -61,11 +62,7 @@ class _AdminDriversScreenState extends State<AdminDriversScreen> {
     );
 
     if (shouldUpdate != true) return;
-    await _setDriverBlocked(
-      doc: doc,
-      blocked: blocked,
-      driverName: driverName,
-    );
+    await _setDriverBlocked(doc: doc, blocked: blocked, driverName: driverName);
   }
 
   Future<void> _showDriverInTransitBlockWarning({
@@ -101,8 +98,9 @@ class _AdminDriversScreenState extends State<AdminDriversScreen> {
     setState(() => _updatingDriverId = doc.id);
     try {
       if (blocked) {
-        final inTransitOrderCount = await _service
-            .inTransitOrderCountForDriver(driverId: doc.id);
+        final inTransitOrderCount = await _service.inTransitOrderCountForDriver(
+          driverId: doc.id,
+        );
         if (inTransitOrderCount > 0) {
           if (!mounted) return;
           await _showDriverInTransitBlockWarning(
@@ -153,11 +151,21 @@ class _AdminDriversScreenState extends State<AdminDriversScreen> {
   }
 
   Future<void> _confirmRemoveDriver(
-    QueryDocumentSnapshot<Map<String, dynamic>> doc,
-  ) async {
+    QueryDocumentSnapshot<Map<String, dynamic>> doc, {
+    required int activeAssignedOrderCount,
+  }) async {
     final data = doc.data();
     final driverName = _driverName(data);
     final email = _text(data, 'email', fallback: 'No email');
+
+    if (activeAssignedOrderCount > 0) {
+      await _showDriverAssignedRemoveWarning(
+        driverName: driverName,
+        activeAssignedOrderCount: activeAssignedOrderCount,
+      );
+      return;
+    }
+
     final shouldRemove = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -182,12 +190,48 @@ class _AdminDriversScreenState extends State<AdminDriversScreen> {
     await _removeDriver(doc: doc, driverName: driverName);
   }
 
+  Future<void> _showDriverAssignedRemoveWarning({
+    required String driverName,
+    required int activeAssignedOrderCount,
+  }) {
+    final orderText = activeAssignedOrderCount == 1
+        ? 'an active assigned order'
+        : '$activeAssignedOrderCount active assigned orders';
+
+    return showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Driver Assigned to Order'),
+        content: Text(
+          'You cannot remove $driverName while the driver is assigned to $orderText. Reassign the order or wait until it is delivered first.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _removeDriver({
     required QueryDocumentSnapshot<Map<String, dynamic>> doc,
     required String driverName,
   }) async {
     setState(() => _removingDriverId = doc.id);
     try {
+      final activeAssignedOrderCount = await _service
+          .activeAssignedOrderCountForDriver(driverId: doc.id);
+      if (activeAssignedOrderCount > 0) {
+        if (!mounted) return;
+        await _showDriverAssignedRemoveWarning(
+          driverName: driverName,
+          activeAssignedOrderCount: activeAssignedOrderCount,
+        );
+        return;
+      }
+
       await _service.removeDriver(driverId: doc.id);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -199,7 +243,7 @@ class _AdminDriversScreenState extends State<AdminDriversScreen> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not remove driver: $error')),
+        SnackBar(content: Text(_friendlyRemoveDriverErrorMessage(error))),
       );
     } finally {
       if (mounted) setState(() => _removingDriverId = null);
@@ -245,6 +289,9 @@ class _AdminDriversScreenState extends State<AdminDriversScreen> {
               final inTransitOrdersByDriverId = ordersSnapshot.hasData
                   ? _inTransitOrdersByDriverId(ordersSnapshot.data!.docs)
                   : const <String, int>{};
+              final activeAssignedOrdersByDriverId = ordersSnapshot.hasData
+                  ? _activeAssignedOrdersByDriverId(ordersSnapshot.data!.docs)
+                  : const <String, int>{};
 
               return ListView.builder(
                 padding: const EdgeInsets.all(16),
@@ -255,11 +302,14 @@ class _AdminDriversScreenState extends State<AdminDriversScreen> {
                   final isBlocked = _isBlocked(data);
                   final inTransitOrderCount =
                       inTransitOrdersByDriverId[doc.id] ?? 0;
+                  final activeAssignedOrderCount =
+                      activeAssignedOrdersByDriverId[doc.id] ?? 0;
                   return _DriverCard(
                     isRemoving: _removingDriverId == doc.id,
                     isUpdating: _updatingDriverId == doc.id,
                     isBlocked: isBlocked,
                     inTransitOrderCount: inTransitOrderCount,
+                    activeAssignedOrderCount: activeAssignedOrderCount,
                     name: _driverName(data),
                     email: _text(data, 'email', fallback: 'No email'),
                     phone: _text(data, 'phone', fallback: 'Not set'),
@@ -272,7 +322,10 @@ class _AdminDriversScreenState extends State<AdminDriversScreen> {
                       blocked: !isBlocked,
                       inTransitOrderCount: inTransitOrderCount,
                     ),
-                    onRemove: () => _confirmRemoveDriver(doc),
+                    onRemove: () => _confirmRemoveDriver(
+                      doc,
+                      activeAssignedOrderCount: activeAssignedOrderCount,
+                    ),
                   );
                 },
               );
@@ -290,6 +343,7 @@ class _DriverCard extends StatelessWidget {
     required this.isUpdating,
     required this.isBlocked,
     required this.inTransitOrderCount,
+    required this.activeAssignedOrderCount,
     required this.name,
     required this.email,
     required this.phone,
@@ -305,6 +359,7 @@ class _DriverCard extends StatelessWidget {
   final bool isUpdating;
   final bool isBlocked;
   final int inTransitOrderCount;
+  final int activeAssignedOrderCount;
   final String name;
   final String email;
   final String phone;
@@ -346,6 +401,11 @@ class _DriverCard extends StatelessWidget {
                     const _DriverBadge(
                       text: 'In Transit',
                       color: Color(0xFFF59E0B),
+                    ),
+                  if (activeAssignedOrderCount > 0 && inTransitOrderCount == 0)
+                    const _DriverBadge(
+                      text: 'Assigned',
+                      color: Color(0xFF0F3B66),
                     ),
                   _DriverBadge(
                     text: isBlocked ? 'Blocked' : 'Driver',
@@ -569,6 +629,41 @@ Map<String, int> _inTransitOrdersByDriverId(
     counts[driverId] = (counts[driverId] ?? 0) + 1;
   }
   return counts;
+}
+
+Map<String, int> _activeAssignedOrdersByDriverId(
+  Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+) {
+  final counts = <String, int>{};
+  for (final doc in docs) {
+    final data = doc.data();
+    final driverId = _text(data, 'driverId', fallback: '');
+    if (driverId.isEmpty) continue;
+
+    final status = AdminOrderService.normalizeOrderStatus(
+      (data['status'] as String?) ?? '',
+    );
+    if (status == 'delivered') continue;
+
+    counts[driverId] = (counts[driverId] ?? 0) + 1;
+  }
+  return counts;
+}
+
+String _friendlyRemoveDriverErrorMessage(Object error) {
+  if (error is FirebaseFunctionsException) {
+    final message = (error.message ?? '').trim();
+    if (error.code == 'failed-precondition') {
+      return message.isEmpty
+          ? 'This driver is assigned to an active order and cannot be removed yet.'
+          : message;
+    }
+    if (message.isNotEmpty) {
+      return 'Could not remove driver: $message';
+    }
+  }
+
+  return 'Could not remove driver: $error';
 }
 
 String _text(

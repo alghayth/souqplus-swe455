@@ -222,6 +222,21 @@ class AdminOrderService {
     }).length;
   }
 
+  Future<int> activeAssignedOrderCountForDriver({
+    required String driverId,
+  }) async {
+    final snapshot = await db
+        .collection('orders')
+        .where('driverId', isEqualTo: driverId)
+        .get();
+    return snapshot.docs.where((doc) {
+      final status = normalizeOrderStatus(
+        (doc.data()['status'] as String?) ?? '',
+      );
+      return status != 'delivered';
+    }).length;
+  }
+
   Future<void> removeProductPost({required String productId}) {
     final callable = FirebaseFunctions.instance.httpsCallable(
       'removeProductPostAsAdmin',

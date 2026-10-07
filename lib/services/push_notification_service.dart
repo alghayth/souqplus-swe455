@@ -9,6 +9,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:souqplus/firebase_options.dart';
 import 'package:souqplus/main.dart';
 import 'package:souqplus/screens/notifications/notifications_screen.dart';
+import 'package:souqplus/services/notification_logger.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -42,56 +43,61 @@ class PushNotificationService {
       return;
     }
 
-    await _messaging.requestPermission(alert: true, badge: true, sound: true);
+    try {
+      await _messaging.requestPermission(alert: true, badge: true, sound: true);
 
-    await _localNotifications.initialize(
-      const InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-        iOS: DarwinInitializationSettings(),
-      ),
-      onDidReceiveNotificationResponse: (_) => _openNotificationsScreen(),
-    );
+      await _localNotifications.initialize(
+        const InitializationSettings(
+          android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+          iOS: DarwinInitializationSettings(),
+        ),
+        onDidReceiveNotificationResponse: (_) => _openNotificationsScreen(),
+      );
 
-    await _localNotifications
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.createNotificationChannel(_androidChannel);
+      await _localNotifications
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >()
+          ?.createNotificationChannel(_androidChannel);
 
-    await _messaging.setForegroundNotificationPresentationOptions(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
+      await _messaging.setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
 
-    _foregroundMessageSubscription?.cancel();
-    _foregroundMessageSubscription = FirebaseMessaging.onMessage.listen(
-      _showForegroundNotification,
-    );
+      _foregroundMessageSubscription?.cancel();
+      _foregroundMessageSubscription = FirebaseMessaging.onMessage.listen(
+        _showForegroundNotification,
+      );
 
-    _messageOpenedSubscription?.cancel();
-    _messageOpenedSubscription = FirebaseMessaging.onMessageOpenedApp.listen(
-      (_) => _openNotificationsScreen(),
-    );
+      _messageOpenedSubscription?.cancel();
+      _messageOpenedSubscription = FirebaseMessaging.onMessageOpenedApp.listen(
+        (_) => _openNotificationsScreen(),
+      );
 
-    final initialMessage = await _messaging.getInitialMessage();
-    if (initialMessage != null) {
-      _openNotificationsScreen();
-    }
-
-    _authSubscription?.cancel();
-    _authSubscription = FirebaseAuth.instance.authStateChanges().listen(
-      (user) => _saveTokenForUser(user),
-    );
-    await _saveTokenForUser(FirebaseAuth.instance.currentUser);
-
-    _tokenRefreshSubscription?.cancel();
-    _tokenRefreshSubscription = _messaging.onTokenRefresh.listen((token) {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        _saveToken(user: user, token: token);
+      final initialMessage = await _messaging.getInitialMessage();
+      if (initialMessage != null) {
+        _openNotificationsScreen();
       }
-    });
+
+      _authSubscription?.cancel();
+      _authSubscription = FirebaseAuth.instance.authStateChanges().listen(
+        (user) => _saveTokenForUser(user),
+      );
+      await _saveTokenForUser(FirebaseAuth.instance.currentUser);
+
+      _tokenRefreshSubscription?.cancel();
+      _tokenRefreshSubscription = _messaging.onTokenRefresh.listen((token) {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          _saveToken(user: user, token: token);
+        }
+      });
+    } catch (e, s) {
+      NotificationLogger.error('PUSH INIT ERROR', e, s);
+      // App startup continues even if notification setup fails.
+    }
   }
 
   Future<void> _saveTokenForUser(User? user) async {
@@ -106,8 +112,8 @@ class PushNotificationService {
       }
 
       await _saveToken(user: user, token: token);
-    } catch (e) {
-      debugPrint('FCM TOKEN SAVE ERROR: $e');
+    } catch (e, s) {
+      NotificationLogger.error('FCM TOKEN SAVE ERROR', e, s);
     }
   }
 
@@ -118,8 +124,8 @@ class PushNotificationService {
         'latestFcmToken': token,
         'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-    } catch (e) {
-      debugPrint('FCM TOKEN WRITE ERROR: $e');
+    } catch (e, s) {
+      NotificationLogger.error('FCM TOKEN WRITE ERROR', e, s);
     }
   }
 
@@ -131,22 +137,26 @@ class PushNotificationService {
         message.data['message'] ??
         'You have a new update.';
 
-    await _localNotifications.show(
-      DateTime.now().millisecondsSinceEpoch ~/ 1000,
-      title,
-      body,
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'souqplus_notifications',
-          'Souqplus notifications',
-          channelDescription:
-              'Order confirmations and system updates from Souqplus.',
-          importance: Importance.high,
-          priority: Priority.high,
+    try {
+      await _localNotifications.show(
+        DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        title,
+        body,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'souqplus_notifications',
+            'Souqplus notifications',
+            channelDescription:
+                'Order confirmations and system updates from Souqplus.',
+            importance: Importance.high,
+            priority: Priority.high,
+          ),
+          iOS: DarwinNotificationDetails(),
         ),
-        iOS: DarwinNotificationDetails(),
-      ),
-    );
+      );
+    } catch (e, s) {
+      NotificationLogger.error('SHOW FOREGROUND NOTIFICATION ERROR', e, s);
+    }
   }
 
   void _openNotificationsScreen() {

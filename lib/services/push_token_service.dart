@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:souqplus/main.dart';
+import 'package:souqplus/services/notification_logger.dart';
 
 class PushTokenService {
   static StreamSubscription<String>? _tokenRefreshSubscription;
@@ -46,15 +47,19 @@ class PushTokenService {
       await _tokenRefreshSubscription?.cancel();
       _tokenRefreshSubscription = FirebaseMessaging.instance.onTokenRefresh
           .listen((newToken) async {
-            await userRef.set({
-              'latestFcmToken': newToken,
-              'fcmTokens': FieldValue.arrayUnion([newToken]),
-              'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
-            }, SetOptions(merge: true));
-            debugPrint('FCM TOKEN: refreshed for user ${user.uid}.');
+            try {
+              await userRef.set({
+                'latestFcmToken': newToken,
+                'fcmTokens': FieldValue.arrayUnion([newToken]),
+                'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
+              }, SetOptions(merge: true));
+              debugPrint('FCM TOKEN: refreshed for user ${user.uid}.');
+            } catch (e, s) {
+              NotificationLogger.error('FCM TOKEN REFRESH WRITE ERROR', e, s);
+            }
           });
-    } catch (e) {
-      debugPrint('FCM TOKEN ERROR: $e');
+    } catch (e, s) {
+      NotificationLogger.error('FCM TOKEN ERROR', e, s);
     }
   }
 }

@@ -15,6 +15,9 @@ import 'package:souqplus/models/cart.dart';
 import 'package:souqplus/screens/profile/purchase_history_screen.dart';
 import 'package:souqplus/services/cart_service.dart';
 import 'package:souqplus/services/notification_service.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+enum _PaymentMethod { card, tamara }
 
 class CheckoutScreen extends StatefulWidget {
   const CheckoutScreen({
@@ -36,6 +39,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       'https://us-central1-souqplus-1bb34.cloudfunctions.net/createMarketplacePaymentIntent';
   static const String _finalizeMarketplaceOrderUrl =
       'https://us-central1-souqplus-1bb34.cloudfunctions.net/finalizeMarketplaceOrder';
+  static const String _createTamaraCheckoutUrl =
+      'https://us-central1-souqplus-1bb34.cloudfunctions.net/createTamaraCheckout';
+  static const Duration _tamaraPaymentTimeout = Duration(minutes: 10);
 
   final MapController _mapController = MapController();
   final TextEditingController _deliveryAddressController =
@@ -47,6 +53,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _isLocatingUser = false;
   bool _isResolvingAddress = false;
   bool _isPlacingOrder = false;
+  _PaymentMethod _paymentMethod = _PaymentMethod.card;
 
   List<Cart> get _cartItems =>
       widget.initialItems != null
@@ -323,8 +330,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     required User user,
     required String deliveryAddress,
     required List<Cart> purchasedItems,
-    required String paymentIntentId,
+    String paymentIntentId = '',
+    _PaymentMethod paymentMethod = _PaymentMethod.card,
   }) async {
+    final isTamara = paymentMethod == _PaymentMethod.tamara;
     final purchasedProductIds = purchasedItems
         .map((item) => item.product.firestoreId)
         .whereType<String>()
@@ -363,8 +372,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       'items': products,
       'subtotalSar': _cartTotal,
       'totalPriceSar': _cartTotal,
-      'paymentIntentId': paymentIntentId,
-      'paymentStatus': 'paid',
+      'paymentProvider': isTamara ? 'tamara' : 'stripe',
+      if (!isTamara) 'paymentIntentId': paymentIntentId,
+      // Tamara orders become 'paid' only when the Tamara webhook confirms them.
+      'paymentStatus': isTamara ? 'pending' : 'paid',
       'sellerTransferStatus': 'pending',
       'subtotal': _cartTotal,
       'total': _cartTotal,
@@ -579,6 +590,242 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
+  Future<_TamaraCheckout> _createTamaraCheckout(
+    User user,
+    String orderId,
+    List<Cart> purchasedItems,
+  ) async {
+    final httpClient = HttpClient();
+
+    try {
+      final idToken = await user.getIdToken();
+      final request = await httpClient.postUrl(
+        Uri.parse(_createTamaraCheckoutUrl),
+      );
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $idToken');
+      request.headers.contentType = ContentType.json;
+      request.write(
+        jsonEncode(<String, dynamic>{
+          'orderId': orderId,
+          'items': purchasedItems
+              .map(
+                (item) => <String, dynamic>{
+                  'productFirestoreId': item.product.firestoreId,
+                  'quantity': item.numOfItem,
+                },
+              )
+              .toList(),
+        }),
+      );
+
+      final response = await request.close();
+      final responseBody = await response.transform(utf8.decoder).join();
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(
+          'Tamara checkout request failed (${response.statusCode}): $responseBody',
+        );
+      }
+
+      final decoded = jsonDecode(responseBody);
+      if (decoded is! Map<String, dynamic>) {
+        throw Exception('Unexpected Tamara response format.');
+      }
+
+      final checkoutUrl = (decoded['checkoutUrl'] as String? ?? '').trim();
+      final tamaraOrderId = (decoded['tamaraOrderId'] as String? ?? '').trim();
+      if (checkoutUrl.isEmpty || tamaraOrderId.isEmpty) {
+        throw Exception('Tamara response did not include a checkout URL.');
+      }
+
+      return _TamaraCheckout(
+        checkoutUrl: checkoutUrl,
+        tamaraOrderId: tamaraOrderId,
+      );
+    } finally {
+      httpClient.close(force: true);
+    }
+  }
+
+  /// Waits until the Tamara webhook updates the order's paymentStatus, the
+  /// customer presses "Cancel payment", or the timeout is reached.
+  /// Returns 'paid', 'failed' or 'canceled'.
+  Future<String> _waitForTamaraPayment(String orderId) async {
+    final cancelRequested = Completer<String>();
+    final dialogFuture = showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Waiting for Tamara'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text(
+              'Complete the payment in Tamara, then return to the app.',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              if (!cancelRequested.isCompleted) {
+                cancelRequested.complete('canceled');
+              }
+            },
+            child: const Text('Cancel payment'),
+          ),
+        ],
+      ),
+    );
+
+    final webhookResult = db
+        .collection(_ordersCollection)
+        .doc(orderId)
+        .snapshots()
+        .map((snapshot) => snapshot.data()?['paymentStatus'] as String? ?? '')
+        .firstWhere(
+          (status) =>
+              status == 'paid' || status == 'failed' || status == 'canceled',
+        );
+
+    String result;
+    try {
+      result = await Future.any<String>([
+        webhookResult,
+        cancelRequested.future,
+      ]).timeout(_tamaraPaymentTimeout);
+    } on TimeoutException {
+      result = 'canceled';
+    }
+
+    if (mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+    await dialogFuture;
+    return result;
+  }
+
+  Future<void> _placeTamaraOrder({
+    required User user,
+    required String deliveryAddress,
+    required List<Cart> purchasedItems,
+  }) async {
+    // The order is saved first (paymentStatus: pending) so the backend can
+    // reference it as Tamara's order_reference_id.
+    final savedOrder = await _saveOrder(
+      user: user,
+      deliveryAddress: deliveryAddress,
+      purchasedItems: purchasedItems,
+      paymentMethod: _PaymentMethod.tamara,
+    );
+
+    final _TamaraCheckout checkout;
+    try {
+      checkout = await _createTamaraCheckout(
+        user,
+        savedOrder.orderId,
+        purchasedItems,
+      );
+      final launched = await launchUrl(
+        Uri.parse(checkout.checkoutUrl),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched) {
+        throw Exception('Could not open the Tamara payment page.');
+      }
+    } catch (e) {
+      await _closeUnpaidOrder(savedOrder.orderId);
+      rethrow;
+    }
+
+    if (!mounted) return;
+    final result = await _waitForTamaraPayment(savedOrder.orderId);
+
+    if (result != 'paid') {
+      await _closeUnpaidOrder(savedOrder.orderId);
+      _showSnack(
+        result == 'failed'
+            ? 'Tamara could not approve this payment.'
+            : 'Tamara payment was canceled.',
+      );
+      return;
+    }
+
+    await _createPaymentConfirmationNotification(
+      user: user,
+      orderId: savedOrder.orderId,
+      paymentIntentId: checkout.tamaraOrderId,
+    );
+
+    _clearPurchasedItems(purchasedItems);
+
+    if (!mounted) return;
+    await _showOrderPlacedSuccess();
+  }
+
+  /// Marks a Tamara order that was never paid as canceled so it does not
+  /// stay in the buyer's history as an active order.
+  Future<void> _closeUnpaidOrder(String orderId) async {
+    try {
+      await db.collection(_ordersCollection).doc(orderId).set({
+        'paymentStatus': 'canceled',
+        'status': 'canceled',
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('UNPAID ORDER CLOSE ERROR: $e');
+    }
+  }
+
+  Widget _buildPaymentMethodSelector() {
+    Widget option(_PaymentMethod method, String title, String subtitle) {
+      return RadioListTile<_PaymentMethod>(
+        value: method,
+        enabled: !_isPlacingOrder,
+        title: Text(title),
+        subtitle: Text(subtitle),
+        contentPadding: EdgeInsets.zero,
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey),
+        color: Colors.white.withAlpha(80),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "Payment Method",
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+          RadioGroup<_PaymentMethod>(
+            groupValue: _paymentMethod,
+            onChanged: (value) {
+              if (value != null) setState(() => _paymentMethod = value);
+            },
+            child: Column(
+              children: [
+                option(_PaymentMethod.card, 'Card', 'Pay in full with Stripe'),
+                option(
+                  _PaymentMethod.tamara,
+                  'Tamara',
+                  'Split into installments, no fees',
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _placeOrder() async {
     final deliveryAddress = _deliveryAddressController.text.trim();
 
@@ -609,6 +856,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       );
       if (checkoutError != null) {
         _showSnack(checkoutError);
+        return;
+      }
+
+      if (_paymentMethod == _PaymentMethod.tamara) {
+        await _placeTamaraOrder(
+          user: user,
+          deliveryAddress: deliveryAddress,
+          purchasedItems: purchasedItems,
+        );
         return;
       }
 
@@ -871,6 +1127,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ],
             ),
           ),
+          const SizedBox(height: 16),
+          _buildPaymentMethodSelector(),
         ],
       ),
       bottomNavigationBar: Container(
@@ -901,7 +1159,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       height: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text("Place Order"),
+                  : Text(
+                      _paymentMethod == _PaymentMethod.tamara
+                          ? "Pay with Tamara"
+                          : "Place Order",
+                    ),
             ),
           ),
         ),
@@ -918,6 +1180,16 @@ class _MarketplacePaymentIntent {
 
   final String clientSecret;
   final String paymentIntentId;
+}
+
+class _TamaraCheckout {
+  const _TamaraCheckout({
+    required this.checkoutUrl,
+    required this.tamaraOrderId,
+  });
+
+  final String checkoutUrl;
+  final String tamaraOrderId;
 }
 
 class _SavedOrderResult {

@@ -9,13 +9,15 @@ requests), kept separate from the application code.
 docs/
 ├── README.md                                   ← this file
 ├── phase1-program-comprehension/
-│   └── notifications-module.md                 ← how the Notifications module works
+│   ├── notifications-module.md                 ← how the Notifications module works
+│   └── control-flow.md                         ← Tojan: checkout and payment control flow
 └── maintenance-requests/
     └── MR001-preventive-notifications/         ← Munirah — Preventive MR
         ├── 1-maintenance-request-form.md
         ├── 2-impact-analysis-form.md
         ├── 3-cost-estimation-form.md
         └── 4-implementation-and-test-report.md
+    MR004-adaptive-tamara-payments/         ← Tojan — Adaptive MR (same four forms)
 ```
 
 ## Maintenance requests
@@ -23,6 +25,7 @@ docs/
 | ID | Type | Module | Owner | Branch | Status |
 |---|---|---|---|---|---|
 | MR001 | Preventive | Notifications | Munirah | `person1-notifications-mr` | Implemented and tested; waiting for PR review |
+| MR004 | Adaptive | Payments | Tojan | `person4-tamara-mr` | Implemented; sandbox end-to-end test pending credentials |
 
 To add another request, copy the `MR001-…` folder, rename it (for example
 `MR002-corrective-…`), and fill in the four forms.

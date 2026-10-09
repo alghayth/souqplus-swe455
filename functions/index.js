@@ -7,6 +7,15 @@ const {
   onDocumentUpdated,
 } = require("firebase-functions/v2/firestore");
 const {onRequest, onCall, HttpsError} = require("firebase-functions/v2/https");
+const {
+  getTamaraConfig,
+  buildTamaraCheckoutPayload,
+  createTamaraCheckoutSession,
+  authoriseTamaraOrder,
+  verifyTamaraWebhookToken,
+  extractWebhookToken,
+  paymentStatusForTamaraEvent,
+} = require("./tamara");
 const app = admin.initializeApp();
 const sellerOnboardingDb = getFirestore(app, "souqplus");
 const projectId = process.env.GCLOUD_PROJECT || "souqplus-1bb34";
@@ -1000,6 +1009,186 @@ exports.finalizeMarketplaceOrder = onRequest(async (req, res) => {
       details: logged.code || null,
     });
   }
+});
+
+function getTamaraFunctionUrl(name) {
+  return `https://us-central1-${projectId}.cloudfunctions.net/${name}`;
+}
+
+exports.createTamaraCheckout = onRequest(async (req, res) => {
+  setCorsHeaders(res);
+
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+
+  if (req.method !== "POST") {
+    res.status(405).send({error: "Method Not Allowed"});
+    return;
+  }
+
+  try {
+    const config = getTamaraConfig();
+    const decodedToken = await authenticateRequest(req);
+    const orderId = String(req.body.orderId || "").trim();
+
+    if (!orderId) {
+      res.status(400).send({error: "orderId is required."});
+      return;
+    }
+
+    const orderRef = sellerOnboardingDb.collection("orders").doc(orderId);
+    const orderSnapshot = await orderRef.get();
+    if (!orderSnapshot.exists) {
+      res.status(404).send({error: "Order not found."});
+      return;
+    }
+
+    const orderData = orderSnapshot.data() || {};
+    if (String(orderData.userId || "").trim() !== decodedToken.uid) {
+      res.status(403).send({error: "You are not allowed to pay for this order."});
+      return;
+    }
+
+    if (String(orderData.paymentProvider || "") !== "tamara" ||
+        String(orderData.paymentStatus || "") !== "pending") {
+      res.status(400).send({error: "Order is not waiting for a Tamara payment."});
+      return;
+    }
+
+    const checkoutItems = await buildCheckoutItems(req.body.items || []);
+    const returnUrl = getTamaraFunctionUrl("tamaraReturn");
+    const payload = buildTamaraCheckoutPayload({
+      orderId,
+      checkoutItems,
+      buyer: {
+        name: orderData.buyerName,
+        email: orderData.buyerEmail,
+        phone: orderData.buyerPhoneNumber,
+      },
+      deliveryAddress: orderData.deliveryAddress || orderData.deliveryLocationDetails,
+      merchantUrls: {
+        success: `${returnUrl}?status=success`,
+        failure: `${returnUrl}?status=failure`,
+        cancel: `${returnUrl}?status=cancel`,
+        notification: getTamaraFunctionUrl("tamaraWebhook"),
+      },
+    });
+
+    const session = await createTamaraCheckoutSession(config, payload);
+    if (!session.checkout_url || !session.order_id) {
+      throw new Error("Tamara response did not include checkout_url.");
+    }
+
+    await orderRef.set({
+      tamaraOrderId: session.order_id,
+      tamaraCheckoutId: session.checkout_id || "",
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, {merge: true});
+
+    res.status(200).send({
+      checkoutUrl: session.checkout_url,
+      tamaraOrderId: session.order_id,
+    });
+  } catch (error) {
+    const logged = logFunctionError("createTamaraCheckout POST", error);
+    const statusCode = logged.message.includes("Authorization") ||
+      logged.message.includes("token") ?
+      401 :
+      500;
+
+    res.status(statusCode).send({
+      error: logged.message,
+      details: logged.code || null,
+    });
+  }
+});
+
+// Tamara calls this endpoint when the customer's payment status changes.
+exports.tamaraWebhook = onRequest(async (req, res) => {
+  if (req.method !== "POST") {
+    res.status(405).send({error: "Method Not Allowed"});
+    return;
+  }
+
+  try {
+    const config = getTamaraConfig();
+    verifyTamaraWebhookToken(extractWebhookToken(req), config.notificationToken);
+
+    const tamaraOrderId = String(req.body.order_id || "").trim();
+    const orderId = String(req.body.order_reference_id || "").trim();
+    const eventType = String(req.body.event_type || "").trim();
+    const newStatus = paymentStatusForTamaraEvent(eventType);
+
+    if (!tamaraOrderId || !orderId || !newStatus) {
+      // Unknown event: acknowledge so Tamara does not keep retrying it.
+      res.status(200).send({ignored: true});
+      return;
+    }
+
+    const orderRef = sellerOnboardingDb.collection("orders").doc(orderId);
+    const orderSnapshot = await orderRef.get();
+    if (!orderSnapshot.exists) {
+      res.status(404).send({error: "Order not found."});
+      return;
+    }
+
+    const orderData = orderSnapshot.data() || {};
+    if (String(orderData.tamaraOrderId || "") !== tamaraOrderId) {
+      res.status(400).send({error: "Tamara order does not match this order."});
+      return;
+    }
+
+    if (String(orderData.paymentStatus || "") === "paid") {
+      res.status(200).send({orderId, paymentStatus: "paid"});
+      return;
+    }
+
+    let paymentStatus = newStatus;
+    if (newStatus === "approved") {
+      // The customer approved the plan; the merchant must authorise it.
+      await authoriseTamaraOrder(config, tamaraOrderId);
+      paymentStatus = "paid";
+    }
+
+    const update = {
+      paymentStatus,
+      tamaraLastEvent: eventType,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    if (paymentStatus === "paid") {
+      update.sellerTransferStatus = "awaiting_tamara_settlement";
+      await orderRef.set(update, {merge: true});
+      const soldItems = (orderData.items || [])
+          .filter((item) => item && item.productFirestoreId)
+          .map((item) => ({productFirestoreId: item.productFirestoreId}));
+      await markProductsSold(soldItems);
+    } else {
+      update.status = "canceled";
+      await orderRef.set(update, {merge: true});
+    }
+
+    res.status(200).send({orderId, paymentStatus});
+  } catch (error) {
+    const logged = logFunctionError("tamaraWebhook POST", error);
+    const isAuthError = logged.message.includes("Tamara webhook") ||
+      logged.message.includes("notification token");
+    res.status(isAuthError ? 401 : 500).send({error: logged.message});
+  }
+});
+
+// Page the customer lands on after leaving the Tamara checkout.
+exports.tamaraReturn = onRequest((req, res) => {
+  const status = String(req.query.status || "");
+  const messages = {
+    success: ["Payment received", "Your Tamara payment was approved. Return to the SouqPlus app."],
+    failure: ["Payment failed", "Tamara could not approve this payment. Return to the SouqPlus app."],
+    cancel: ["Payment canceled", "You canceled the Tamara payment. Return to the SouqPlus app."],
+  };
+  const [title, message] = messages[status] || messages.failure;
+  sendStatusPage(res, title, message);
 });
 
 exports.createSellerStripeAccountLink = onRequest(async (req, res) => {

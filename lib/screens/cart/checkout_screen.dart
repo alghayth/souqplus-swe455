@@ -1,12 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart' as latlng;
@@ -15,9 +12,9 @@ import 'package:souqplus/models/cart.dart';
 import 'package:souqplus/screens/profile/purchase_history_screen.dart';
 import 'package:souqplus/services/cart_service.dart';
 import 'package:souqplus/services/notification_service.dart';
-import 'package:url_launcher/url_launcher.dart';
-
-enum _PaymentMethod { card, tamara }
+import 'package:souqplus/services/payments/payment_provider.dart';
+import 'package:souqplus/services/payments/stripe_payment_provider.dart';
+import 'package:souqplus/services/payments/tamara_payment_provider.dart';
 
 class CheckoutScreen extends StatefulWidget {
   const CheckoutScreen({
@@ -35,12 +32,6 @@ class CheckoutScreen extends StatefulWidget {
 class _CheckoutScreenState extends State<CheckoutScreen> {
   static const latlng.LatLng _defaultCenter = latlng.LatLng(24.7136, 46.6753);
   static const String _ordersCollection = 'orders';
-  static const String _createPaymentIntentUrl =
-      'https://us-central1-souqplus-1bb34.cloudfunctions.net/createMarketplacePaymentIntent';
-  static const String _finalizeMarketplaceOrderUrl =
-      'https://us-central1-souqplus-1bb34.cloudfunctions.net/finalizeMarketplaceOrder';
-  static const String _createTamaraCheckoutUrl =
-      'https://us-central1-souqplus-1bb34.cloudfunctions.net/createTamaraCheckout';
   static const Duration _tamaraPaymentTimeout = Duration(minutes: 10);
 
   final MapController _mapController = MapController();
@@ -53,7 +44,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _isLocatingUser = false;
   bool _isResolvingAddress = false;
   bool _isPlacingOrder = false;
-  _PaymentMethod _paymentMethod = _PaymentMethod.card;
+  CheckoutPaymentMethod _paymentMethod = CheckoutPaymentMethod.card;
+
+  late final Map<CheckoutPaymentMethod, PaymentProvider> _paymentProviders = {
+    CheckoutPaymentMethod.card: StripePaymentProvider(),
+    CheckoutPaymentMethod.tamara: TamaraPaymentProvider(
+      waitForResult: _waitForTamaraPayment,
+    ),
+  };
 
   List<Cart> get _cartItems =>
       widget.initialItems != null
@@ -253,87 +251,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return null;
   }
 
-  Future<void> _presentPaymentSheet(String clientSecret) async {
-    await Stripe.instance.initPaymentSheet(
-      paymentSheetParameters: SetupPaymentSheetParameters(
-        merchantDisplayName: 'Souqplus',
-        paymentIntentClientSecret: clientSecret,
-      ),
-    );
-
-    await Stripe.instance.presentPaymentSheet();
-  }
-
-  Future<_MarketplacePaymentIntent> _createMarketplacePaymentIntent(
-    User user,
-    List<Cart> purchasedItems,
-  ) async {
-    final httpClient = HttpClient();
-
-    try {
-      final idToken = await user.getIdToken();
-      final request = await httpClient.postUrl(
-        Uri.parse(_createPaymentIntentUrl),
-      );
-      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $idToken');
-      request.headers.contentType = ContentType.json;
-      request.write(
-        jsonEncode(<String, dynamic>{
-          'items': purchasedItems
-              .map(
-                (item) => <String, dynamic>{
-                  'productFirestoreId': item.product.firestoreId,
-                  'quantity': item.numOfItem,
-                },
-              )
-              .toList(),
-        }),
-      );
-
-      final response = await request.close();
-      final responseBody = await response.transform(utf8.decoder).join();
-
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception(
-          'Payment intent request failed (${response.statusCode}): $responseBody',
-        );
-      }
-
-      final decoded = jsonDecode(responseBody);
-      if (decoded is! Map<String, dynamic>) {
-        throw Exception('Unexpected payment response format.');
-      }
-
-      final clientSecret =
-          (decoded['clientSecret'] as String? ??
-                  decoded['client_secret'] as String?)
-              ?.trim();
-      final paymentIntentId = (decoded['paymentIntentId'] as String? ?? '')
-          .trim();
-
-      if (clientSecret == null ||
-          clientSecret.isEmpty ||
-          paymentIntentId.isEmpty) {
-        throw Exception('Payment response did not include a clientSecret.');
-      }
-
-      return _MarketplacePaymentIntent(
-        clientSecret: clientSecret,
-        paymentIntentId: paymentIntentId,
-      );
-    } finally {
-      httpClient.close(force: true);
-    }
-  }
-
   Future<_SavedOrderResult> _saveOrder({
     required User user,
     required String deliveryAddress,
     required List<Cart> purchasedItems,
     String paymentIntentId = '',
-    _PaymentMethod paymentMethod = _PaymentMethod.card,
+    CheckoutPaymentMethod paymentMethod = CheckoutPaymentMethod.card,
   }) async {
-    final isTamara = paymentMethod == _PaymentMethod.tamara;
+    final isTamara = paymentMethod == CheckoutPaymentMethod.tamara;
     final purchasedProductIds = purchasedItems
         .map((item) => item.product.firestoreId)
         .whereType<String>()
@@ -447,62 +372,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  Future<void> _finalizeMarketplaceOrder({
-    required User user,
-    required String orderId,
-    required String paymentIntentId,
-    required List<Cart> purchasedItems,
-  }) async {
-    final httpClient = HttpClient();
-
-    try {
-      final idToken = await user.getIdToken();
-      final request = await httpClient.postUrl(
-        Uri.parse(_finalizeMarketplaceOrderUrl),
-      );
-      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $idToken');
-      request.headers.contentType = ContentType.json;
-      request.write(
-        jsonEncode(<String, dynamic>{
-          'orderId': orderId,
-          'paymentIntentId': paymentIntentId,
-          'items': purchasedItems
-              .map(
-                (item) => <String, dynamic>{
-                  'productFirestoreId': item.product.firestoreId,
-                  'quantity': item.numOfItem,
-                },
-              )
-              .toList(),
-        }),
-      );
-
-      final response = await request.close();
-      final responseBody = await response.transform(utf8.decoder).join();
-
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception(
-          'Marketplace transfer request failed (${response.statusCode}): $responseBody',
-        );
-      }
-    } finally {
-      httpClient.close(force: true);
-    }
-  }
-
-  Future<void> _markProductsSold(List<String> productIds) async {
-    if (productIds.isEmpty) return;
-
-    final batch = db.batch();
-    for (final productId in productIds) {
-      batch.set(db.collection('products').doc(productId), {
-        'status': 'Sold',
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    }
-    await batch.commit();
-  }
-
   void _clearPurchasedItems(List<Cart> purchasedItems) {
     if (widget.initialItems != null) {
       return;
@@ -590,63 +459,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
-  Future<_TamaraCheckout> _createTamaraCheckout(
-    User user,
-    String orderId,
-    List<Cart> purchasedItems,
-  ) async {
-    final httpClient = HttpClient();
-
-    try {
-      final idToken = await user.getIdToken();
-      final request = await httpClient.postUrl(
-        Uri.parse(_createTamaraCheckoutUrl),
-      );
-      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $idToken');
-      request.headers.contentType = ContentType.json;
-      request.write(
-        jsonEncode(<String, dynamic>{
-          'orderId': orderId,
-          'items': purchasedItems
-              .map(
-                (item) => <String, dynamic>{
-                  'productFirestoreId': item.product.firestoreId,
-                  'quantity': item.numOfItem,
-                },
-              )
-              .toList(),
-        }),
-      );
-
-      final response = await request.close();
-      final responseBody = await response.transform(utf8.decoder).join();
-
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception(
-          'Tamara checkout request failed (${response.statusCode}): $responseBody',
-        );
-      }
-
-      final decoded = jsonDecode(responseBody);
-      if (decoded is! Map<String, dynamic>) {
-        throw Exception('Unexpected Tamara response format.');
-      }
-
-      final checkoutUrl = (decoded['checkoutUrl'] as String? ?? '').trim();
-      final tamaraOrderId = (decoded['tamaraOrderId'] as String? ?? '').trim();
-      if (checkoutUrl.isEmpty || tamaraOrderId.isEmpty) {
-        throw Exception('Tamara response did not include a checkout URL.');
-      }
-
-      return _TamaraCheckout(
-        checkoutUrl: checkoutUrl,
-        tamaraOrderId: tamaraOrderId,
-      );
-    } finally {
-      httpClient.close(force: true);
-    }
-  }
-
   /// Waits until the Tamara webhook updates the order's paymentStatus, the
   /// customer presses "Cancel payment", or the timeout is reached.
   /// Returns 'paid', 'failed' or 'canceled'.
@@ -708,64 +520,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return result;
   }
 
-  Future<void> _placeTamaraOrder({
-    required User user,
-    required String deliveryAddress,
-    required List<Cart> purchasedItems,
-  }) async {
-    // The order is saved first (paymentStatus: pending) so the backend can
-    // reference it as Tamara's order_reference_id.
-    final savedOrder = await _saveOrder(
-      user: user,
-      deliveryAddress: deliveryAddress,
-      purchasedItems: purchasedItems,
-      paymentMethod: _PaymentMethod.tamara,
-    );
-
-    final _TamaraCheckout checkout;
-    try {
-      checkout = await _createTamaraCheckout(
-        user,
-        savedOrder.orderId,
-        purchasedItems,
-      );
-      final launched = await launchUrl(
-        Uri.parse(checkout.checkoutUrl),
-        mode: LaunchMode.externalApplication,
-      );
-      if (!launched) {
-        throw Exception('Could not open the Tamara payment page.');
-      }
-    } catch (e) {
-      await _closeUnpaidOrder(savedOrder.orderId);
-      rethrow;
-    }
-
-    if (!mounted) return;
-    final result = await _waitForTamaraPayment(savedOrder.orderId);
-
-    if (result != 'paid') {
-      await _closeUnpaidOrder(savedOrder.orderId);
-      _showSnack(
-        result == 'failed'
-            ? 'Tamara could not approve this payment.'
-            : 'Tamara payment was canceled.',
-      );
-      return;
-    }
-
-    await _createPaymentConfirmationNotification(
-      user: user,
-      orderId: savedOrder.orderId,
-      paymentIntentId: checkout.tamaraOrderId,
-    );
-
-    _clearPurchasedItems(purchasedItems);
-
-    if (!mounted) return;
-    await _showOrderPlacedSuccess();
-  }
-
   /// Marks a Tamara order that was never paid as canceled so it does not
   /// stay in the buyer's history as an active order.
   Future<void> _closeUnpaidOrder(String orderId) async {
@@ -781,8 +535,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Widget _buildPaymentMethodSelector() {
-    Widget option(_PaymentMethod method, String title, String subtitle) {
-      return RadioListTile<_PaymentMethod>(
+    Widget option(CheckoutPaymentMethod method, String title, String subtitle) {
+      return RadioListTile<CheckoutPaymentMethod>(
         value: method,
         enabled: !_isPlacingOrder,
         title: Text(title),
@@ -805,16 +559,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             "Payment Method",
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
-          RadioGroup<_PaymentMethod>(
+          RadioGroup<CheckoutPaymentMethod>(
             groupValue: _paymentMethod,
             onChanged: (value) {
               if (value != null) setState(() => _paymentMethod = value);
             },
             child: Column(
               children: [
-                option(_PaymentMethod.card, 'Card', 'Pay in full with Stripe'),
+                option(CheckoutPaymentMethod.card, 'Card', 'Pay in full with Stripe'),
                 option(
-                  _PaymentMethod.tamara,
+                  CheckoutPaymentMethod.tamara,
                   'Tamara',
                   'Split into installments, no fees',
                 ),
@@ -859,50 +613,69 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         return;
       }
 
-      if (_paymentMethod == _PaymentMethod.tamara) {
-        await _placeTamaraOrder(
+      final provider = _paymentProviders[_paymentMethod]!;
+
+      // Providers that confirm by webhook need the order to exist first.
+      _SavedOrderResult? savedOrder;
+      if (provider.savesOrderBeforePayment) {
+        savedOrder = await _saveOrder(
           user: user,
           deliveryAddress: deliveryAddress,
           purchasedItems: purchasedItems,
+          paymentMethod: provider.method,
         );
-        return;
       }
 
-      final paymentIntent = await _createMarketplacePaymentIntent(
-        user,
-        purchasedItems,
-      );
-
+      final PaymentOutcome outcome;
       try {
-        await _presentPaymentSheet(paymentIntent.clientSecret);
-      } on StripeException catch (e) {
-        final stripeMessage = e.error.localizedMessage ?? 'Payment cancelled.';
-        _showSnack(stripeMessage);
-        return;
+        outcome = await provider.pay(
+          PaymentRequest(
+            user: user,
+            items: purchasedItems,
+            orderId: savedOrder?.orderId,
+          ),
+        );
       } catch (e) {
-        _showSnack('Payment failed: $e');
+        if (savedOrder != null) {
+          await _closeUnpaidOrder(savedOrder.orderId);
+        }
+        rethrow;
+      }
+
+      if (!outcome.isPaid) {
+        if (savedOrder != null) {
+          await _closeUnpaidOrder(savedOrder.orderId);
+        }
+        _showSnack(outcome.message ?? 'Payment failed.');
         return;
       }
 
-      if (!mounted) return;
-      final savedOrder = await _saveOrder(
+      if (savedOrder == null) {
+        if (!mounted) return;
+        savedOrder = await _saveOrder(
+          user: user,
+          deliveryAddress: deliveryAddress,
+          purchasedItems: purchasedItems,
+          paymentIntentId: outcome.reference,
+          paymentMethod: provider.method,
+        );
+      }
+
+      final paidOrder = PaidOrder(
         user: user,
-        deliveryAddress: deliveryAddress,
-        purchasedItems: purchasedItems,
-        paymentIntentId: paymentIntent.paymentIntentId,
+        orderId: savedOrder.orderId,
+        reference: outcome.reference,
+        items: purchasedItems,
+        productIds: savedOrder.productIds,
       );
 
       await _createPaymentConfirmationNotification(
         user: user,
-        orderId: savedOrder.orderId,
-        paymentIntentId: paymentIntent.paymentIntentId,
+        orderId: paidOrder.orderId,
+        paymentIntentId: paidOrder.reference,
       );
 
-      try {
-        await _markProductsSold(savedOrder.productIds);
-      } on FirebaseException catch (e) {
-        debugPrint('PRODUCT STATUS UPDATE ERROR (${e.code}): ${e.message}');
-      }
+      await provider.onOrderSaved(paidOrder);
 
       _clearPurchasedItems(purchasedItems);
 
@@ -910,12 +683,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       await _showOrderPlacedSuccess();
 
       try {
-        await _finalizeMarketplaceOrder(
-          user: user,
-          orderId: savedOrder.orderId,
-          paymentIntentId: paymentIntent.paymentIntentId,
-          purchasedItems: purchasedItems,
-        );
+        await provider.settleWithSellers(paidOrder);
       } catch (e) {
         debugPrint('ORDER FINALIZATION ERROR: $e');
       }
@@ -1160,7 +928,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : Text(
-                      _paymentMethod == _PaymentMethod.tamara
+                      _paymentMethod == CheckoutPaymentMethod.tamara
                           ? "Pay with Tamara"
                           : "Place Order",
                     ),
@@ -1170,26 +938,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       ),
     );
   }
-}
-
-class _MarketplacePaymentIntent {
-  const _MarketplacePaymentIntent({
-    required this.clientSecret,
-    required this.paymentIntentId,
-  });
-
-  final String clientSecret;
-  final String paymentIntentId;
-}
-
-class _TamaraCheckout {
-  const _TamaraCheckout({
-    required this.checkoutUrl,
-    required this.tamaraOrderId,
-  });
-
-  final String checkoutUrl;
-  final String tamaraOrderId;
 }
 
 class _SavedOrderResult {

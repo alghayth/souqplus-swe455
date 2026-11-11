@@ -29,3 +29,10 @@ docs/
 
 To add another request, copy the `MR001-…` folder, rename it (for example
 `MR002-corrective-…`), and fill in the four forms.
+
+## Phase 2 (Tojan, Payments / MR004)
+
+| Part | File |
+|---|---|
+| Part 3: Program Slicing (Dynamic, Forward) | `phase2/slicing-mr004-dynamic-forward.md` |
+| Part 4: Refactoring (Extract Interface) | `phase2/refactoring-mr004-extract-interface.md` |

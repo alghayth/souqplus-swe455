@@ -363,7 +363,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     final inPrice =
                         price >=
                             (_selectedPriceRange['min'] as num).toDouble() &&
-                        price <=
+                        price <
                             (_selectedPriceRange['max'] as num).toDouble();
                     final inCategory =
                         _selectedCategory == 'All' ||

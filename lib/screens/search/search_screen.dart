@@ -324,7 +324,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   category.contains(_searchKeyword);
               final inPrice =
                   price >= (_selectedPriceRange['min'] as num).toDouble() &&
-                  price <= (_selectedPriceRange['max'] as num).toDouble();
+                  price < (_selectedPriceRange['max'] as num).toDouble();
               final inCategory =
                   _selectedCategory == 'All' ||
                   category == _selectedCategory.toLowerCase();

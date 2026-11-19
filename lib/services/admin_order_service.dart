@@ -3,6 +3,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:souqplus/main.dart';
+import 'package:souqplus/services/driver_assignment_service.dart';
 
 class AdminOrderService {
   const AdminOrderService();
@@ -164,6 +165,29 @@ class AdminOrderService {
       'assignedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  // MR005: stores the driver's latest position on the driver document so the
+  // assignment algorithm can compare drivers before they have any order.
+  Future<void> updateDriverLastKnownLocation({
+    required String driverId,
+    required double latitude,
+    required double longitude,
+  }) {
+    return db.collection('drivers').doc(driverId).set({
+      'lastKnownLocation': {
+        'latitude': latitude,
+        'longitude': longitude,
+        'geoPoint': GeoPoint(latitude, longitude),
+      },
+      'lastLocationUpdatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  // MR005: the assignment logic now lives in DriverAssignmentService
+  // (Extract Class). The public method is kept so callers do not change.
+  Future<String?> autoAssignBestDriver({required String orderId}) {
+    return DriverAssignmentService(this).assignBestDriver(orderId: orderId);
   }
 
   Future<void> updateUserBlocked({

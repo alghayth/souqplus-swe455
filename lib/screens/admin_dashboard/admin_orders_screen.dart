@@ -49,6 +49,34 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
     }
   }
 
+  // MR005: lets the system pick the driver with the best distance/workload score.
+  Future<void> _autoAssignDriver({required String orderId}) async {
+    setState(() => _updatingOrderId = orderId);
+    try {
+      final driverId = await _adminOrderService.autoAssignBestDriver(
+        orderId: orderId,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            driverId == null
+                ? 'No available driver with a known location was found.'
+                : 'Order assigned automatically to the best available driver.',
+          ),
+          backgroundColor: driverId == null ? null : Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_friendlyUpdateErrorMessage(e))));
+    } finally {
+      if (mounted) setState(() => _updatingOrderId = null);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -279,6 +307,22 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                                   driver: driver,
                                 ),
                               ),
+                            if (!isDelivered &&
+                                rawOrderStatus != 'in transit') ...[
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.auto_awesome),
+                                  label: const Text('Auto-assign best driver'),
+                                  onPressed: _updatingOrderId == doc.id
+                                      ? null
+                                      : () => _autoAssignDriver(
+                                          orderId: doc.id,
+                                        ),
+                                ),
+                              ),
+                            ],
                             if (driverIssue != null &&
                                 (rawOrderStatus == 'in transit' ||
                                     rawOrderStatus == 'delivered')) ...[

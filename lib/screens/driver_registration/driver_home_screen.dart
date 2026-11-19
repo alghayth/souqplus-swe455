@@ -44,6 +44,49 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   String _selectedDeliveryFilter = 'ordered';
 
   @override
+  void initState() {
+    super.initState();
+    _publishAvailabilityLocation();
+  }
+
+  // MR005: publishes the driver's position once when the dashboard opens, so
+  // the driver can be considered for automatic assignment even with no orders.
+  Future<void> _publishAvailabilityLocation() async {
+    final driverUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (driverUid.isEmpty) return;
+
+    final hasPermission = await _ensureLocationPermission();
+    if (!hasPermission) return;
+
+    try {
+      Position? position;
+      try {
+        position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 10),
+          ),
+        );
+      } catch (_) {
+        position = await Geolocator.getLastKnownPosition();
+      }
+      if (position == null) return;
+
+      await _orderService.updateDriverLastKnownLocation(
+        driverId: driverUid,
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+      debugPrint(
+        'Backend: Sent availability location '
+        '(${position.latitude}, ${position.longitude})',
+      );
+    } catch (error) {
+      debugPrint('Backend: Could not send availability location: $error');
+    }
+  }
+
+  @override
   void dispose() {
     _positionSubscription?.cancel();
     super.dispose();
@@ -225,6 +268,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
         latitude: position.latitude,
         longitude: position.longitude,
       );
+      await _updateAvailabilityLocation(position);
       await _appendRemoteTrailPoint(position, now, force: force);
       _lastSyncedPosition = position;
       _lastLocationSyncAt = now;
@@ -233,6 +277,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(_friendlyUpdateErrorMessage(error))),
       );
+    }
+  }
+
+  // MR005: a failure here must not stop the existing order tracking.
+  Future<void> _updateAvailabilityLocation(Position position) async {
+    final driverUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (driverUid.isEmpty) return;
+    try {
+      await _orderService.updateDriverLastKnownLocation(
+        driverId: driverUid,
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+    } catch (error) {
+      debugPrint('Backend: Could not update driver location: $error');
     }
   }
 

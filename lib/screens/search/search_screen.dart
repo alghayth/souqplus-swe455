@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:souqplus/components/product_card.dart';
 import 'package:souqplus/main.dart';
+import 'package:souqplus/helper/product_filter.dart';
 import 'package:souqplus/models/product.dart';
 import 'package:souqplus/screens/details/details_screen.dart';
 import 'package:souqplus/screens/favorite/favorite_screen.dart';
@@ -309,28 +310,13 @@ class _SearchScreenState extends State<SearchScreen> {
               return bTs.compareTo(aTs);
             });
 
+            // Keep only the products that pass every filter (see ProductFilter).
             final filteredDocs = docs.where((doc) {
-              final rawStatus =
-                  ((doc.data()['status'] as String?) ?? '').trim().toLowerCase();
-              final title =
-                  ((doc.data()['title'] as String?) ?? '').toLowerCase();
-              final category =
-                  ((doc.data()['category'] as String?) ?? '').toLowerCase();
-              final price = (doc.data()['price'] as num?)?.toDouble() ?? 0.0;
-
-              final matchesText =
-                  _searchKeyword.isEmpty ||
-                  title.contains(_searchKeyword) ||
-                  category.contains(_searchKeyword);
-              final inPrice =
-                  price >= (_selectedPriceRange['min'] as num).toDouble() &&
-                  price <= (_selectedPriceRange['max'] as num).toDouble();
-              final inCategory =
-                  _selectedCategory == 'All' ||
-                  category == _selectedCategory.toLowerCase();
-              final isAvailable = rawStatus.isEmpty || rawStatus == 'active';
-
-              return isAvailable && matchesText && inPrice && inCategory;
+              final data = doc.data();
+              return ProductFilter.isAvailable(data) &&
+                  ProductFilter.matchesKeyword(data, _searchKeyword) &&
+                  ProductFilter.isInPriceRange(data, _selectedPriceRange) &&
+                  ProductFilter.isInCategory(data, _selectedCategory);
             }).toList();
 
             if (filteredDocs.isEmpty) {

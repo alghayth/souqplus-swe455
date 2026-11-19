@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:souqplus/components/product_card.dart';
 import 'package:souqplus/main.dart';
+import 'package:souqplus/helper/product_filter.dart';
 import 'package:souqplus/models/product.dart';
 import 'package:souqplus/screens/details/details_screen.dart';
 import 'package:souqplus/services/marketplace_cleanup_service.dart';
@@ -350,28 +351,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     return bTs.compareTo(aTs);
                   });
 
+                  // Keep only the products that pass every filter (see ProductFilter).
                   final filteredDocs = docs.where((doc) {
-                    final rawStatus = ((doc.data()['status'] as String?) ?? '')
-                        .trim()
-                        .toLowerCase();
-                    final category =
-                        ((doc.data()['category'] as String?) ?? '')
-                            .toLowerCase();
-                    final price =
-                        (doc.data()['price'] as num?)?.toDouble() ?? 0.0;
-
-                    final inPrice =
-                        price >=
-                            (_selectedPriceRange['min'] as num).toDouble() &&
-                        price <=
-                            (_selectedPriceRange['max'] as num).toDouble();
-                    final inCategory =
-                        _selectedCategory == 'All' ||
-                        category == _selectedCategory.toLowerCase();
-
-                    final isAvailable = rawStatus.isEmpty || rawStatus == 'active';
-
-                    return isAvailable && inPrice && inCategory;
+                    final data = doc.data();
+                    return ProductFilter.isAvailable(data) &&
+                        ProductFilter.isInPriceRange(data, _selectedPriceRange) &&
+                        ProductFilter.isInCategory(data, _selectedCategory);
                   }).toList();
 
                   if (filteredDocs.isEmpty) {

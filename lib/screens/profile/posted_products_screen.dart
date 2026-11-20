@@ -10,6 +10,7 @@ import 'package:souqplus/components/app_bottom_nav.dart';
 import 'package:souqplus/components/page_header_title.dart';
 import 'package:souqplus/constants.dart';
 import 'package:souqplus/helper/listing_filter.dart';
+import 'package:souqplus/helper/listing_status.dart';
 import 'package:souqplus/main.dart';
 import 'package:souqplus/services/category_service.dart';
 import 'package:souqplus/services/marketplace_cleanup_service.dart';
@@ -433,14 +434,12 @@ class _PostedProductsScreenState extends State<PostedProductsScreen> {
                 }
 
                 final docs = productSnapshot.data!.docs;
-                final activeCount = docs.where((doc) {
-                  final status = _effectiveStatus(doc.data());
-                  return status.toLowerCase() == 'active';
-                }).length;
-                final soldCount = docs.where((doc) {
-                  final status = _effectiveStatus(doc.data());
-                  return status.toLowerCase() == 'sold';
-                }).length;
+                final activeCount = docs
+                    .where((doc) => ListingStatus.isActive(doc.data()))
+                    .length;
+                final soldCount = docs
+                    .where((doc) => ListingStatus.isSold(doc.data()))
+                    .length;
 
                 if (docs.isEmpty) {
                   return const Center(
@@ -533,7 +532,8 @@ class _PostedProductsScreenState extends State<PostedProductsScreen> {
                     final description = (data['description'] as String?)?.trim() ??
                         'No description';
                     final imageUrl = (data['imageUrl'] as String?)?.trim();
-                    final status = _effectiveStatus(data);
+                    final status = ListingStatus.of(data);
+                    final isActive = ListingStatus.isActive(data);
                     final price = (data['price'] as num?)?.toDouble() ?? 0;
                     final createdAt = data['createdAt'] as Timestamp?;
 
@@ -618,7 +618,7 @@ class _PostedProductsScreenState extends State<PostedProductsScreen> {
                                         vertical: 6,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: status.toLowerCase() == 'active'
+                                        color: isActive
                                             ? Colors.green.withValues(alpha: 0.1)
                                             : Colors.grey.withValues(alpha: 0.16),
                                         borderRadius: BorderRadius.circular(12),
@@ -626,7 +626,7 @@ class _PostedProductsScreenState extends State<PostedProductsScreen> {
                                       child: Text(
                                         status,
                                         style: TextStyle(
-                                          color: status.toLowerCase() == 'active'
+                                          color: isActive
                                               ? Colors.green
                                               : Colors.grey,
                                           fontWeight: FontWeight.w600,
@@ -768,11 +768,6 @@ class _PostedProductsScreenState extends State<PostedProductsScreen> {
   String _formatDate(Timestamp timestamp) {
     final date = timestamp.toDate();
     return '${date.day}/${date.month}/${date.year}';
-  }
-
-  String _effectiveStatus(Map<String, dynamic> data) {
-    final statusValue = (data['status'] as String?)?.trim();
-    return statusValue == null || statusValue.isEmpty ? 'Active' : statusValue;
   }
 }
 

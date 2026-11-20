@@ -1,3 +1,5 @@
+import 'package:souqplus/helper/listing_status.dart';
+
 /// Filter rules for the seller's own listings on the Posted Products screen.
 ///
 /// MR003 (Perfective): the seller can narrow their listings by status and by
@@ -57,9 +59,6 @@ class ListingFilter {
   /// (case-insensitive). A missing or blank status counts as 'Active'.
   static bool matchesStatus(Map<String, dynamic> data, String selectedStatus) {
     if (selectedStatus == all) return true;
-    final statusValue = (data['status'] as String?)?.trim();
-    final status =
-        statusValue == null || statusValue.isEmpty ? 'Active' : statusValue;
-    return status.toLowerCase() == selectedStatus.toLowerCase();
+    return ListingStatus.isStatus(ListingStatus.of(data), selectedStatus);
   }
 }

@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:souqplus/components/app_bottom_nav.dart';
 import 'package:souqplus/components/page_header_title.dart';
 import 'package:souqplus/constants.dart';
+import 'package:souqplus/helper/listing_filter.dart';
 import 'package:souqplus/main.dart';
 import 'package:souqplus/services/category_service.dart';
 import 'package:souqplus/services/marketplace_cleanup_service.dart';
@@ -29,6 +30,8 @@ class _PostedProductsScreenState extends State<PostedProductsScreen> {
   final ImagePicker _picker = ImagePicker();
   List<String> _categories = [...CategoryService.defaultCategories];
   StreamSubscription<List<String>>? _categorySubscription;
+  String _selectedStatus = ListingFilter.all;
+  String _selectedCategory = ListingFilter.all;
 
   @override
   void initState() {
@@ -448,9 +451,24 @@ class _PostedProductsScreenState extends State<PostedProductsScreen> {
                   );
                 }
 
+                final categoryOptions = ListingFilter.categoryOptions(
+                  _categories,
+                  docs.map((doc) => doc.data()),
+                );
+                final selectedCategory =
+                    categoryOptions.contains(_selectedCategory)
+                        ? _selectedCategory
+                        : ListingFilter.all;
+                final filteredDocs = docs.where((doc) {
+                  final data = doc.data();
+                  return ListingFilter.matchesCategory(data, selectedCategory) &&
+                      ListingFilter.matchesStatus(data, _selectedStatus);
+                }).toList();
+
                 return ListView.separated(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
-                  itemCount: docs.length + 1,
+                  itemCount:
+                      filteredDocs.isEmpty ? 3 : filteredDocs.length + 2,
                   separatorBuilder: (context, index) =>
                       const SizedBox(height: 14),
                   itemBuilder: (context, index) {
@@ -493,7 +511,20 @@ class _PostedProductsScreenState extends State<PostedProductsScreen> {
                       );
                     }
 
-                    final doc = docs[index - 1];
+                    if (index == 1) {
+                      return _buildFilters(
+                        categoryOptions: categoryOptions,
+                        selectedCategory: selectedCategory,
+                        shownCount: filteredDocs.length,
+                        totalCount: docs.length,
+                      );
+                    }
+
+                    if (filteredDocs.isEmpty) {
+                      return _buildNoMatch();
+                    }
+
+                    final doc = filteredDocs[index - 2];
                     final data = doc.data();
                     final title =
                         (data['title'] as String?)?.trim() ?? 'Untitled';
@@ -650,6 +681,82 @@ class _PostedProductsScreenState extends State<PostedProductsScreen> {
     );
   }
 
+  Widget _buildFilters({
+    required List<String> categoryOptions,
+    required String selectedCategory,
+    required int shownCount,
+    required int totalCount,
+  }) {
+    final isFiltered = _selectedStatus != ListingFilter.all ||
+        selectedCategory != ListingFilter.all;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _FilterChipRow(
+          label: 'Status',
+          options: ListingFilter.statusOptions,
+          selected: _selectedStatus,
+          onSelected: (value) {
+            setState(() => _selectedStatus = value);
+          },
+        ),
+        const SizedBox(height: 10),
+        _FilterChipRow(
+          label: 'Category',
+          options: categoryOptions,
+          selected: selectedCategory,
+          onSelected: (value) {
+            setState(() => _selectedCategory = value);
+          },
+        ),
+        if (isFiltered) ...[
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Showing $shownCount of $totalCount listings',
+                  style: const TextStyle(color: kTextColor),
+                ),
+              ),
+              TextButton(
+                onPressed: _clearFilters,
+                child: const Text('Clear filters'),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildNoMatch() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Column(
+        children: [
+          const Text(
+            'No listings match these filters.',
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: _clearFilters,
+            child: const Text('Clear filters'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _clearFilters() {
+    setState(() {
+      _selectedStatus = ListingFilter.all;
+      _selectedCategory = ListingFilter.all;
+    });
+  }
+
   Widget _buildImagePlaceholder() {
     return Container(
       color: Colors.grey.shade200,
@@ -666,6 +773,51 @@ class _PostedProductsScreenState extends State<PostedProductsScreen> {
   String _effectiveStatus(Map<String, dynamic> data) {
     final statusValue = (data['status'] as String?)?.trim();
     return statusValue == null || statusValue.isEmpty ? 'Active' : statusValue;
+  }
+}
+
+class _FilterChipRow extends StatelessWidget {
+  const _FilterChipRow({
+    required this.label,
+    required this.options,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final String label;
+  final List<String> options;
+  final String selected;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 6),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (final option in options)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: Text(option),
+                    selected: option == selected,
+                    selectedColor: kPrimaryColor.withAlpha(45),
+                    onSelected: (_) => onSelected(option),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
 

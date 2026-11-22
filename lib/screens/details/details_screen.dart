@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:souqplus/helper/listing_status.dart';
 import 'package:souqplus/models/cart.dart';
 import 'package:souqplus/screens/cart/checkout_screen.dart';
 
@@ -151,10 +152,8 @@ class _FirestorePostDetailsScreen extends StatelessWidget {
     final description = (post.data['description'] as String?)?.trim();
     final imageUrl = (post.data['imageUrl'] as String?)?.trim();
     final category = (post.data['category'] as String?)?.trim();
-    final status = (post.data['status'] as String?)?.trim().isNotEmpty == true
-        ? (post.data['status'] as String).trim()
-        : 'Active';
-    final isSold = status.toLowerCase() == 'sold';
+    final status = ListingStatus.of(post.data);
+    final isSold = ListingStatus.isSold(post.data);
     final price = _readDouble(post.data['price']);
     final createdAt = _formatTimestamp(post.data['createdAt'] as Object?);
 

@@ -1,37 +1,46 @@
-# Implementation and Test Report — MR003
+# MR003 — Implementation and Test Report
 
-**Branch:** `person3-mr003` · **Date:** TODO
+**Branch:** `person3-mr003` · **Owner:** Norah
 
-## 1. Changes made
+## What changed
 
-### `lib/helper/listing_filter.dart` (new)
-| Member | Purpose |
+MR003 is implemented on the branch person3-mr003 (commit df12e0d). New: lib/helper/listing_filter.dart (the filter rules) and test/listing_filter_test.dart (12 unit tests). Changed: posted_products_screen.dart, which now has a Status and a Category filter, "Showing X of Y listings", "Clear filters" and a no-match message. No database, rules or index changes.
+
+| File | Change |
 |---|---|
-| `all`, `statusOptions` | Chip values: `All`, `Active`, `Sold` |
-| `categoryOf(data)` | Trimmed category; `Other` if missing or blank |
-| `categoryOptions(managed, listings)` | `All`, the managed categories, then any other category a listing uses (case-insensitive, first spelling wins) |
-| `matchesCategory(data, selected)` | `All` or case-insensitive category match |
-| `matchesStatus(data, selected)` | `All` or case-insensitive status match; missing/blank status is `Active` |
+| `lib/helper/listing_filter.dart` | New. Filter rules: `categoryOf`, `categoryOptions`, `matchesCategory`, `matchesStatus`. |
+| `lib/screens/profile/posted_products_screen.dart` | Status and Category chip rows, filtered list, "Showing X of Y listings", "Clear filters", no-match message. |
+| `test/listing_filter_test.dart` | New. 12 unit tests for the filter rules. |
 
-### `lib/screens/profile/posted_products_screen.dart`
-| Change |
-|---|
-| Fields `_selectedStatus`, `_selectedCategory` (default `All`) |
-| `categoryOptions`, `selectedCategory` and `filteredDocs` computed in `build()`; the Firestore query is unchanged |
-| List items: summary card (counts all listings), filters, then filtered listings or `_buildNoMatch()` |
-| New `_buildFilters`, `_buildNoMatch`, `_clearFilters`, and `_FilterChipRow` |
+## Refactoring that followed (Phase 2, Part 4)
 
-### Refactoring #3 (Consolidate Conditional Expression)
-See `docs/phase2/refactoring-mr003-consolidate-conditional.md`.
-
-## 2. Automated tests
-
-| Command | Result |
+| File | Change |
 |---|---|
-| `flutter test test/listing_filter_test.dart test/listing_status_test.dart` | TODO |
-| `flutter test` | TODO |
-| `flutter analyze` | TODO |
+| `lib/helper/listing_status.dart` | New. `ListingStatus.of / isActive / isSold / isStatus` (Consolidate Conditional Expression). |
+| `lib/screens/profile/posted_products_screen.dart` | Summary counts and status badge use `ListingStatus`; `_effectiveStatus` removed. |
+| `lib/screens/details/details_screen.dart` | Status and `isSold` use `ListingStatus`. |
+| `lib/helper/listing_filter.dart` | `matchesStatus` uses `ListingStatus`. |
+| `test/listing_status_test.dart` | New. 13 tests comparing `ListingStatus` with the original expressions. |
 
-## 3. Manual testing
+## How to verify
 
-TODO
+```bash
+flutter test test/listing_filter_test.dart test/listing_status_test.dart
+flutter analyze
+```
+
+Manual check: sign in as a seller with listings in several categories (including one with a deleted
+custom category) and both statuses, open **Posted Products**, and try every Status and Category chip,
+"Clear filters", and edit / delete while a filter is on.
+
+## Results
+
+| Check | Result |
+|---|---|
+| `flutter test test/listing_filter_test.dart` | 12 / 12 passed |
+| `flutter test test/listing_status_test.dart` | 13 / 13 passed |
+| `flutter test` (whole suite) | 57 / 57 passed |
+| `flutter analyze` | No issues found |
+| Manual check on a device | Not done (no Android emulator available) |
+
+Commits: `df12e0d` (MR003), `95a16fe` (refactoring), `e388988` (docs).
